@@ -1,4 +1,5 @@
-import { LayoutDashboard, GitBranch, ListTodo, BarChart3, Settings, Server } from 'lucide-react';
+import { LayoutDashboard, GitBranch, ListTodo, BarChart3, Settings, Server, HardDrive, Layers } from 'lucide-react';
+import { useSearch } from '../../context/SearchContext';
 
 interface SidebarProps {
   activePage: string;
@@ -7,7 +8,9 @@ interface SidebarProps {
 
 const NAV_ITEMS = [
   { id: 'cluster', label: 'Cluster Control', icon: LayoutDashboard },
+  { id: 'clusterqueues', label: 'Cluster Queues', icon: Layers },
   { id: 'pools', label: 'Resource Monitor', icon: Server },
+  { id: 'nodes', label: 'Nodes', icon: HardDrive },
   { id: 'workloads', label: 'Workloads', icon: ListTodo },
   { id: 'quotas', label: 'Quotas', icon: GitBranch },
   { id: 'metrics', label: 'Metrics', icon: BarChart3 },
@@ -15,6 +18,13 @@ const NAV_ITEMS = [
 ];
 
 export function Sidebar({ activePage, onNavigate }: SidebarProps) {
+  const { clearQuery } = useSearch();
+
+  const handleNavigate = (page: string) => {
+    clearQuery();
+    onNavigate(page);
+  };
+
   return (
     <aside className="w-60 shrink-0 h-screen bg-surface border-r border-border p-4 flex flex-col gap-2">
       <div className="text-lg font-semibold text-text-primary mb-4 px-3">
@@ -26,7 +36,7 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
           return (
             <button
               key={item.id}
-              onClick={() => onNavigate(item.id)}
+              onClick={() => handleNavigate(item.id)}
               className={`flex items-center gap-3 h-10 px-3 rounded-lg text-[13px] font-medium transition-colors duration-120 ${
                 active
                   ? 'bg-surface-2 text-text-primary border-l-3 border-primary'

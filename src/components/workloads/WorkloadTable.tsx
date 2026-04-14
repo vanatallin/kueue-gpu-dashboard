@@ -7,7 +7,7 @@ interface WorkloadTableProps {
   compact?: boolean;
 }
 
-const COLUMNS = ['Workload', 'Team', 'Priority', 'GPUs', 'Status', 'Progress', 'Pool'];
+const COLUMNS = ['Workload', 'Type', 'Namespace', 'Priority', 'GPUs', 'Status', 'Pool'];
 
 export function WorkloadTable({ workloads, compact }: WorkloadTableProps) {
   return (

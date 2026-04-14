@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kueue-dashboard-config
+  labels:
+    app: kueue-dashboard
+data:
+  # Update these values for your environment
+  OAUTH_CALLBACK_URL: "https://<route-host>/auth/callback"
+  FRONTEND_URL: "https://<route-host>"

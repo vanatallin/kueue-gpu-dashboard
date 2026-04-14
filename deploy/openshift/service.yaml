@@ -1,0 +1,32 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kueue-dashboard-backend
+  labels:
+    app: kueue-dashboard
+    component: backend
+spec:
+  selector:
+    app: kueue-dashboard
+    component: backend
+  ports:
+    - port: 3001
+      targetPort: 3001
+      name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kueue-dashboard-frontend
+  labels:
+    app: kueue-dashboard
+    component: frontend
+spec:
+  selector:
+    app: kueue-dashboard
+    component: frontend
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http

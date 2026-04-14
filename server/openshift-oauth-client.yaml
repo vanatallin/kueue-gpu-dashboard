@@ -1,0 +1,13 @@
+# Apply this to your OpenShift cluster to enable OAuth:
+# oc apply -f openshift-oauth-client.yaml
+apiVersion: oauth.openshift.io/v1
+kind: OAuthClient
+metadata:
+  name: kueue-dashboard
+grantMethod: auto
+secret: <generate-with-openssl-rand-base64-32>
+redirectURIs:
+  # Local development
+  - http://localhost:3001/auth/callback
+  # In-cluster deployment (update with your actual route)
+  # - https://<route-host>/auth/callback

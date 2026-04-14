@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kueue-dashboard-backend
+  labels:
+    app: kueue-dashboard
+    component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kueue-dashboard
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: kueue-dashboard
+        component: backend
+    spec:
+      serviceAccountName: kueue-dashboard
+      imagePullSecrets:
+        - name: quay-pull-secret
+      containers:
+        - name: backend
+          image: quay.io/<your-org>/kueue-dashboard-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3001
+              name: http
+          env:
+            - name: PORT
+              value: "3001"
+            - name: OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: kueue-dashboard-config
+                  key: OAUTH_CLIENT_ID
+            - name: OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: kueue-dashboard-config
+                  key: OAUTH_CLIENT_SECRET
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: kueue-dashboard-config
+                  key: SESSION_SECRET
+            - name: OAUTH_CALLBACK_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: kueue-dashboard-config
+                  key: OAUTH_CALLBACK_URL
+            - name: FRONTEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: kueue-dashboard-config
+                  key: FRONTEND_URL
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL

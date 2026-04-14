@@ -20,11 +20,14 @@ export interface GpuSlice {
 export interface Workload {
   id: string;
   name: string;
+  namespace?: string;
   team: string;
+  type?: string;
   priority: Priority;
   gpusRequested: number;
   status: WorkloadStatus;
   pool: string;
+  queue?: string;
   progress: number;
   submittedAt: string;
 }

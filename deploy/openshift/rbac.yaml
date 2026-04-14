@@ -1,0 +1,38 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kueue-dashboard-reader
+  labels:
+    app: kueue-dashboard
+rules:
+  # Kueue resources
+  - apiGroups: ["kueue.x-k8s.io"]
+    resources:
+      - workloads
+      - clusterqueues
+      - localqueues
+      - resourceflavors
+      - admissionchecks
+    verbs: ["get", "list", "watch"]
+  # Core resources for node info
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - pods
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kueue-dashboard-reader
+  labels:
+    app: kueue-dashboard
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kueue-dashboard-reader
+subjects:
+  - kind: ServiceAccount
+    name: kueue-dashboard
+    namespace: <your-namespace>

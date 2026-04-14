@@ -23,5 +23,15 @@ dist-ssr
 *.sln
 *.sw?
 
+# Environment files with secrets
+.env
+.env.*
+server/.env
+server/.env.*
+!server/.env.example
+
+# Private deployment files (contains real credentials)
+deploy-private/
+
 # Plan/dev artifacts
 PLAN-*.md
