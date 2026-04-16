@@ -22,9 +22,17 @@ export function ClusterControl() {
     e: React.MouseEvent<HTMLDivElement>,
     queue: { name: string; usedGpus: number; nominalGpus: number }
   ) => {
+    // Stop propagation to prevent click-outside handler from interfering
+    e.stopPropagation();
+
+    // Toggle: close if clicking the same queue
+    if (selectedQueue?.name === queue.name) {
+      setSelectedQueue(null);
+      return;
+    }
     const rect = e.currentTarget.getBoundingClientRect();
     setSelectedQueue({ ...queue, rect });
-  }, []);
+  }, [selectedQueue?.name]);
 
   const closePopover = useCallback(() => {
     setSelectedQueue(null);
@@ -262,6 +270,7 @@ export function ClusterControl() {
               return (
                 <div
                   key={queue.name}
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => handleQueueClick(e, queue)}
                   className={`w-[200px] p-3 rounded-[10px] bg-surface-2 border cursor-pointer transition-all ${
                     isSelected
@@ -274,7 +283,7 @@ export function ClusterControl() {
                       {queue.name}
                     </span>
                     {queueWorkloads.length > 0 && (
-                      <span className="flex items-center justify-center min-w-[20px] h-[20px] px-1.5 bg-primary/20 text-primary text-[10px] font-medium rounded-full">
+                      <span className="flex items-center justify-center min-w-[20px] h-[20px] px-1.5 bg-primary text-white text-[10px] font-medium rounded-full">
                         {queueWorkloads.length}
                       </span>
                     )}

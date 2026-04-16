@@ -1,4 +1,4 @@
-import { Search, MessageSquare, X, RefreshCw } from 'lucide-react';
+import { Search, MessageSquare, X, RefreshCw, Sun, Moon } from 'lucide-react';
 import { LoginButton } from '../auth/LoginButton';
 import { useSearch } from '../../context/SearchContext';
 import { useRefresh } from '../../context/RefreshContext';
@@ -26,8 +26,12 @@ function formatLastUpdated(date: Date | null): string {
 export function TopBar({ title, onToggleCopilot }: TopBarProps) {
   const { query, setQuery, clearQuery } = useSearch();
   const { triggerRefresh, lastUpdated, isRefreshing } = useRefresh();
-  const { settings } = useSettings();
+  const { settings, updateSettings } = useSettings();
   const { isAuthenticated } = useAuth();
+
+  const toggleTheme = () => {
+    updateSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' });
+  };
 
   return (
     <header className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-border bg-surface">
@@ -76,6 +80,14 @@ export function TopBar({ title, onToggleCopilot }: TopBarProps) {
             </button>
           )}
         </div>
+        {/* Theme Toggle */}
+        <button
+          onClick={toggleTheme}
+          className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-surface-2 text-text-secondary hover:text-primary transition-colors"
+          title={settings.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {settings.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
         {settings.copilotEnabled && (
           <button
             onClick={onToggleCopilot}

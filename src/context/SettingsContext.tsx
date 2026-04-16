@@ -1,10 +1,13 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
+export type Theme = 'dark' | 'light';
+
 interface Settings {
   autoRefreshEnabled: boolean;
   autoRefreshInterval: number; // in seconds
   demoSliderEnabled: boolean;
   copilotEnabled: boolean;
+  theme: Theme;
 }
 
 interface SettingsContextValue {
@@ -17,6 +20,7 @@ const DEFAULT_SETTINGS: Settings = {
   autoRefreshInterval: 10,
   demoSliderEnabled: false,
   copilotEnabled: true,
+  theme: 'dark',
 };
 
 const STORAGE_KEY = 'kueue-dashboard-settings';
@@ -44,6 +48,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       // Ignore storage errors
     }
   }, [settings]);
+
+  // Apply theme class to document
+  useEffect(() => {
+    const root = document.documentElement;
+    if (settings.theme === 'light') {
+      root.classList.add('light');
+    } else {
+      root.classList.remove('light');
+    }
+  }, [settings.theme]);
 
   const updateSettings = (updates: Partial<Settings>) => {
     setSettings((prev) => ({ ...prev, ...updates }));
