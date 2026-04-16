@@ -1,13 +1,34 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useWorkloads, useNodes, useQuotas } from '../hooks/useKueueData';
 import { MetricCard } from '../components/cards/MetricCard';
+import { QueueWorkloadsPopover } from '../components/queues/QueueWorkloadsPopover';
 import { Loader2, AlertCircle, LogIn, Info, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import type { QuotaNode } from '../types/kueue';
 
 export function ClusterControl() {
   const { isAuthenticated, login } = useAuth();
+
+  // Popover state
+  const [selectedQueue, setSelectedQueue] = useState<{
+    name: string;
+    usedGpus: number;
+    nominalGpus: number;
+    rect: DOMRect;
+  } | null>(null);
+
+  const handleQueueClick = useCallback((
+    e: React.MouseEvent<HTMLDivElement>,
+    queue: { name: string; usedGpus: number; nominalGpus: number }
+  ) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setSelectedQueue({ ...queue, rect });
+  }, []);
+
+  const closePopover = useCallback(() => {
+    setSelectedQueue(null);
+  }, []);
 
   // Fetch real data
   const { workloads, isLoading: workloadsLoading, error: workloadsError } = useWorkloads();
@@ -234,15 +255,29 @@ export function ClusterControl() {
           <div className="flex flex-wrap gap-4">
             {clusterQueues.map((queue) => {
               const utilization = queue.nominalGpus > 0 ? Math.round((queue.usedGpus / queue.nominalGpus) * 100) : 0;
+              const queueWorkloads = workloads.filter(
+                (w) => w.pool === queue.name && (w.status === 'running' || w.status === 'pending')
+              );
+              const isSelected = selectedQueue?.name === queue.name;
               return (
                 <div
                   key={queue.name}
-                  className="w-[200px] p-3 rounded-[10px] bg-surface-2 border border-border"
+                  onClick={(e) => handleQueueClick(e, queue)}
+                  className={`w-[200px] p-3 rounded-[10px] bg-surface-2 border cursor-pointer transition-all ${
+                    isSelected
+                      ? 'border-primary ring-2 ring-primary/20'
+                      : 'border-border hover:border-primary/50 hover:shadow-[0_2px_8px_rgba(0,0,0,0.3)]'
+                  }`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium text-text-primary truncate" title={queue.name}>
                       {queue.name}
                     </span>
+                    {queueWorkloads.length > 0 && (
+                      <span className="flex items-center justify-center min-w-[20px] h-[20px] px-1.5 bg-primary/20 text-primary text-[10px] font-medium rounded-full">
+                        {queueWorkloads.length}
+                      </span>
+                    )}
                   </div>
                   <div className="text-[11px] text-text-muted mb-2">
                     {queue.usedGpus} / {queue.nominalGpus} GPUs ({utilization}%)
@@ -257,6 +292,17 @@ export function ClusterControl() {
               );
             })}
           </div>
+
+          {/* Queue Workloads Popover */}
+          <QueueWorkloadsPopover
+            queueName={selectedQueue?.name || ''}
+            workloads={workloads}
+            usedGpus={selectedQueue?.usedGpus || 0}
+            nominalGpus={selectedQueue?.nominalGpus || 0}
+            isOpen={selectedQueue !== null}
+            onClose={closePopover}
+            anchorRect={selectedQueue?.rect || null}
+          />
         </div>
       )}
 

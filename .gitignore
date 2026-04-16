@@ -31,7 +31,7 @@ server/.env.*
 !server/.env.example
 
 # Private deployment files (contains real credentials)
-deploy-private/
+examples/*
 
 # Plan/dev artifacts
 PLAN-*.md
