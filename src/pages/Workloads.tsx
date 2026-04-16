@@ -3,7 +3,10 @@ import { useAuth } from '../context/AuthContext';
 import { useDemo } from '../context/DemoContext';
 import { useSearch } from '../context/SearchContext';
 import { useWorkloads } from '../hooks/useKueueData';
+import { useWorkloadFilters } from '../hooks/useWorkloadFilters';
+import { useWorkloadSort } from '../hooks/useWorkloadSort';
 import { WorkloadTable } from '../components/workloads/WorkloadTable';
+import { WorkloadFilters } from '../components/workloads/WorkloadFilters';
 import { EventLog } from '../components/workloads/EventLog';
 import { Loader2, AlertCircle } from 'lucide-react';
 
@@ -13,23 +16,46 @@ export function Workloads() {
   const { query } = useSearch();
   const { workloads, isLoading, error } = useWorkloads();
 
+  // Filter and sort hooks
+  const {
+    filters,
+    updateFilter,
+    clearFilter,
+    clearAllFilters,
+    activeFilterCount,
+    applyFilters,
+  } = useWorkloadFilters();
+  const { sortConfig, handleSort, applySort } = useWorkloadSort();
+
   // Use real data if authenticated, otherwise demo data
   const allWorkloads = isAuthenticated ? workloads : demoState.workloads;
   const displayEvents = isAuthenticated ? [] : demoState.events; // Events not available from API yet
 
-  // Filter workloads by search query
+  // Combined pipeline: search -> filter -> sort
   const displayWorkloads = useMemo(() => {
-    if (!query.trim()) return allWorkloads;
-    const lowerQuery = query.toLowerCase();
-    return allWorkloads.filter(
-      (w) =>
-        (w.name?.toLowerCase() || '').includes(lowerQuery) ||
-        (w.namespace?.toLowerCase() || '').includes(lowerQuery) ||
-        (w.type?.toLowerCase() || '').includes(lowerQuery) ||
-        (w.pool?.toLowerCase() || '').includes(lowerQuery) ||
-        (w.status?.toLowerCase() || '').includes(lowerQuery)
-    );
-  }, [allWorkloads, query]);
+    let result = allWorkloads;
+
+    // 1. Text search
+    if (query.trim()) {
+      const lowerQuery = query.toLowerCase();
+      result = result.filter(
+        (w) =>
+          (w.name?.toLowerCase() || '').includes(lowerQuery) ||
+          (w.namespace?.toLowerCase() || '').includes(lowerQuery) ||
+          (w.type?.toLowerCase() || '').includes(lowerQuery) ||
+          (w.pool?.toLowerCase() || '').includes(lowerQuery) ||
+          (w.status?.toLowerCase() || '').includes(lowerQuery)
+      );
+    }
+
+    // 2. Apply filters
+    result = applyFilters(result);
+
+    // 3. Apply sort
+    result = applySort(result);
+
+    return result;
+  }, [allWorkloads, query, applyFilters, applySort]);
 
   if (isAuthenticated && isLoading) {
     return (
@@ -56,7 +82,19 @@ export function Workloads() {
           Showing demo data. Login with OpenShift to see real workloads.
         </div>
       )}
-      <WorkloadTable workloads={displayWorkloads} />
+      <WorkloadFilters
+        filters={filters}
+        workloads={allWorkloads}
+        onUpdateFilter={updateFilter}
+        onClearFilter={clearFilter}
+        onClearAll={clearAllFilters}
+        activeCount={activeFilterCount}
+      />
+      <WorkloadTable
+        workloads={displayWorkloads}
+        sortConfig={sortConfig}
+        onSort={handleSort}
+      />
       {displayEvents.length > 0 && <EventLog events={displayEvents} />}
     </div>
   );

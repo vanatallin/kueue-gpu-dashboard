@@ -79,6 +79,57 @@ function transformLocalQueue(lq: KueueLocalQueue) {
   };
 }
 
+// Calculate lent GPUs for each queue in a cohort
+// When queue A borrows from cohort, other queues (that are NOT borrowing) are lending
+function calculateLentGpus(queues: ReturnType<typeof transformClusterQueue>[]) {
+  // Group queues by cohort
+  const cohortMap = new Map<string, typeof queues>();
+  for (const q of queues) {
+    const cohort = q.cohort || 'default';
+    if (!cohortMap.has(cohort)) {
+      cohortMap.set(cohort, []);
+    }
+    cohortMap.get(cohort)!.push(q);
+  }
+
+  // For each cohort, calculate lent GPUs
+  for (const [, cohortQueues] of cohortMap) {
+    // Total borrowed in this cohort
+    const totalBorrowed = cohortQueues.reduce((sum, q) => sum + q.borrowedGpus, 0);
+
+    if (totalBorrowed === 0) {
+      // No one is borrowing, no one is lending
+      for (const q of cohortQueues) {
+        (q as typeof q & { lentGpus: number }).lentGpus = 0;
+      }
+    } else {
+      // Only queues that are NOT borrowing can be lending
+      // Calculate lending capacity from non-borrowing queues only
+      const lendingQueues = cohortQueues.filter(q => q.borrowedGpus === 0 && q.lendingLimit > 0);
+      const totalLendingCapacity = lendingQueues.reduce((sum, q) => sum + q.lendingLimit, 0);
+
+      for (const q of cohortQueues) {
+        // A queue that is borrowing cannot also be lending
+        if (q.borrowedGpus > 0) {
+          (q as typeof q & { lentGpus: number }).lentGpus = 0;
+        } else if (totalLendingCapacity > 0 && q.lendingLimit > 0) {
+          // This queue's share of lending = (its lendingLimit / total) * totalBorrowed
+          // But capped at its own lendingLimit
+          const share = Math.min(
+            q.lendingLimit,
+            Math.round((q.lendingLimit / totalLendingCapacity) * totalBorrowed)
+          );
+          (q as typeof q & { lentGpus: number }).lentGpus = share;
+        } else {
+          (q as typeof q & { lentGpus: number }).lentGpus = 0;
+        }
+      }
+    }
+  }
+
+  return queues;
+}
+
 // GET /api/clusterqueues
 router.get('/clusterqueues', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -92,7 +143,8 @@ router.get('/clusterqueues', requireAuth, async (req: Request, res: Response) =>
     const data = await client.get<KubeList<KueueClusterQueue>>(KUEUE_API.clusterQueues);
 
     const queues = data.items.map(transformClusterQueue);
-    res.json({ clusterQueues: queues });
+    const queuesWithLent = calculateLentGpus(queues);
+    res.json({ clusterQueues: queuesWithLent });
   } catch (err) {
     console.error('Error fetching cluster queues:', err);
     const message = err instanceof Error ? err.message : 'Failed to fetch cluster queues';

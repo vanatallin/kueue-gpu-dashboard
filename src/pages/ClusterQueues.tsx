@@ -202,15 +202,32 @@ export function ClusterQueues() {
                   </div>
                 </div>
 
-                {/* Borrowed GPUs */}
-                {cq.borrowedGpus > 0 && (
-                  <div className="mb-4 p-2 bg-warning/10 rounded-lg border border-warning/20">
-                    <div className="flex items-center gap-2">
-                      <ArrowRightLeft size={14} className="text-warning" />
-                      <span className="text-[12px] text-warning">
-                        Borrowing {cq.borrowedGpus} GPU{cq.borrowedGpus > 1 ? 's' : ''} from cohort
-                      </span>
-                    </div>
+                {/* Borrowing/Lending Indicators */}
+                {(cq.borrowedGpus > 0 || (cq.lentGpus ?? 0) > 0) && (
+                  <div className="mb-4 flex flex-col gap-2">
+                    {/* Borrowed GPUs */}
+                    {cq.borrowedGpus > 0 && (
+                      <div className="p-2 bg-warning/10 rounded-lg border border-warning/20">
+                        <div className="flex items-center gap-2">
+                          <ArrowRightLeft size={14} className="text-warning" />
+                          <span className="text-[12px] text-warning">
+                            Borrowing {cq.borrowedGpus} GPU{cq.borrowedGpus > 1 ? 's' : ''} from cohort
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Lent GPUs */}
+                    {(cq.lentGpus ?? 0) > 0 && (
+                      <div className="p-2 bg-compute/10 rounded-lg border border-compute/20">
+                        <div className="flex items-center gap-2">
+                          <ArrowRightLeft size={14} className="text-compute" />
+                          <span className="text-[12px] text-compute">
+                            Lending {cq.lentGpus} GPU{cq.lentGpus > 1 ? 's' : ''} to cohort
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

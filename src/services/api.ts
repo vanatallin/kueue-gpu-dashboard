@@ -77,6 +77,7 @@ interface ClusterQueueInfo {
   nominalGpus: number;
   usedGpus: number;
   borrowedGpus: number;
+  lentGpus: number;
   borrowingLimit: number;
   lendingLimit: number;
   priority: number;
