@@ -7,6 +7,7 @@ declare module 'express-session' {
       name: string;
       uid: string;
     };
+    frontendOrigin?: string;
   }
 }
 

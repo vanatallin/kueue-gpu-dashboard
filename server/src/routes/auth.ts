@@ -42,7 +42,19 @@ async function getOAuthUrls() {
 }
 
 // GET /auth/login - Redirect to OpenShift OAuth
-router.get('/login', async (_req: Request, res: Response) => {
+router.get('/login', async (req: Request, res: Response) => {
+  // Store the frontend origin for redirect after OAuth
+  // In dev, Vite may run on a different port than configured
+  const referer = req.headers.referer || req.headers.origin;
+  if (referer) {
+    try {
+      const url = new URL(referer);
+      req.session.frontendOrigin = url.origin;
+    } catch {
+      // Invalid URL, use default
+    }
+  }
+
   const oauth = await getOAuthUrls();
   const params = new URLSearchParams({
     client_id: config.oauthClientId,
@@ -57,15 +69,17 @@ router.get('/login', async (_req: Request, res: Response) => {
 // GET /auth/callback - Exchange code for token
 router.get('/callback', async (req: Request, res: Response) => {
   const { code, error, error_description } = req.query;
+  // Use stored frontend origin or fall back to config
+  const frontendUrl = req.session.frontendOrigin || config.frontendUrl;
 
   if (error) {
     console.error('OAuth error:', error, error_description);
-    res.redirect(`${config.frontendUrl}?error=${encodeURIComponent(String(error_description || error))}`);
+    res.redirect(`${frontendUrl}?error=${encodeURIComponent(String(error_description || error))}`);
     return;
   }
 
   if (!code || typeof code !== 'string') {
-    res.redirect(`${config.frontendUrl}?error=missing_code`);
+    res.redirect(`${frontendUrl}?error=missing_code`);
     return;
   }
 
@@ -108,21 +122,22 @@ router.get('/callback', async (req: Request, res: Response) => {
     };
 
     // Redirect to frontend
-    res.redirect(config.frontendUrl);
+    res.redirect(frontendUrl);
   } catch (err) {
     console.error('OAuth callback error:', err);
     const message = err instanceof Error ? err.message : 'Authentication failed';
-    res.redirect(`${config.frontendUrl}?error=${encodeURIComponent(message)}`);
+    res.redirect(`${frontendUrl}?error=${encodeURIComponent(message)}`);
   }
 });
 
 // GET /auth/logout - Clear session
 router.get('/logout', (req: Request, res: Response) => {
+  const frontendUrl = req.session.frontendOrigin || config.frontendUrl;
   req.session.destroy((err) => {
     if (err) {
       console.error('Logout error:', err);
     }
-    res.redirect(config.frontendUrl);
+    res.redirect(frontendUrl);
   });
 });
 

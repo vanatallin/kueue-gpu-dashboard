@@ -11,9 +11,27 @@ import nodesRoutes from './routes/nodes.js';
 const app = express();
 
 // CORS configuration
+// In development, allow any localhost port since Vite may pick a different port
+const corsOrigin =
+  process.env.NODE_ENV === 'production'
+    ? config.frontendUrl
+    : (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+        // Allow requests with no origin (e.g., curl, Postman)
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+        // Allow any localhost port in development
+        if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'));
+        }
+      };
+
 app.use(
   cors({
-    origin: config.frontendUrl,
+    origin: corsOrigin,
     credentials: true,
   })
 );
