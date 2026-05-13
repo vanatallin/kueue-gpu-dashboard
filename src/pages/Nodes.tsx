@@ -1,11 +1,9 @@
 import { useMemo } from 'react';
-import { useAuth } from '../context/AuthContext';
 import { useSearch } from '../context/SearchContext';
 import { useNodes } from '../hooks/useKueueData';
 import { Loader2, AlertCircle, CheckCircle, XCircle, Cpu, HardDrive, RefreshCw } from 'lucide-react';
 
 export function Nodes() {
-  const { isAuthenticated } = useAuth();
   const { query } = useSearch();
   const { nodes, summary, gpuTypes, isLoading, error, refetch } = useNodes();
 
@@ -19,15 +17,6 @@ export function Nodes() {
         (n.gpuType?.toLowerCase() || '').includes(lowerQuery)
     );
   }, [nodes, query]);
-
-  if (!isAuthenticated) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4 text-text-muted">
-        <HardDrive size={48} className="opacity-50" />
-        <p className="text-[15px]">Login with OpenShift to view cluster nodes</p>
-      </div>
-    );
-  }
 
   if (isLoading) {
     return (

@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { QuotaNode } from '../types/kueue';
 import { QUOTA_TREE } from '../data/quotas';
-import { useAuth } from '../context/AuthContext';
 import { useSearch } from '../context/SearchContext';
+import { useSettings } from '../context/SettingsContext';
 import { useQuotas } from '../hooks/useKueueData';
 import { QuotaTree } from '../components/quotas/QuotaTree';
 import { QuotaTable } from '../components/quotas/QuotaTable';
@@ -75,7 +75,7 @@ function buildQuotaTree(quotas: QuotaNode[]): QuotaNode {
 }
 
 export function Quotas() {
-  const { isAuthenticated } = useAuth();
+  const { settings } = useSettings();
   const { query } = useSearch();
   const { quotas: apiQuotas, isLoading, error } = useQuotas();
 
@@ -85,12 +85,12 @@ export function Quotas() {
 
   // Update tree when API data changes
   useEffect(() => {
-    if (isAuthenticated && apiQuotas.length > 0) {
+    if (!settings.demoMode && apiQuotas.length > 0) {
       setTree(buildQuotaTree(apiQuotas));
-    } else if (!isAuthenticated) {
+    } else if (settings.demoMode) {
       setTree(QUOTA_TREE);
     }
-  }, [isAuthenticated, apiQuotas]);
+  }, [settings.demoMode, apiQuotas]);
 
   // Filter tree by search query
   const filteredTree = useMemo(() => {
@@ -105,7 +105,7 @@ export function Quotas() {
     setTree((prev) => updateNode(prev, updated));
   }, []);
 
-  if (isAuthenticated && isLoading) {
+  if (!settings.demoMode && isLoading) {
     return (
       <div className="flex items-center justify-center h-64 gap-3 text-text-muted">
         <Loader2 size={20} className="animate-spin" />
@@ -114,7 +114,7 @@ export function Quotas() {
     );
   }
 
-  if (isAuthenticated && error) {
+  if (!settings.demoMode && error) {
     return (
       <div className="flex items-center justify-center h-64 gap-3 text-critical">
         <AlertCircle size={20} />
@@ -135,7 +135,7 @@ export function Quotas() {
         <QuotaViewToggle mode={viewMode} onChange={setViewMode} />
       </div>
 
-      {!isAuthenticated && (
+      {settings.demoMode && (
         <div className="bg-surface-2 border border-border rounded-lg p-3 text-[13px] text-text-secondary">
           Showing demo data. Login with OpenShift to see real quotas.
         </div>

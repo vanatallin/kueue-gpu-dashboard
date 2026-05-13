@@ -5,6 +5,7 @@ import {
   KUEUE_API,
   KueueClusterQueue,
   KueueLocalQueue,
+  KueueResourceFlavor,
   KubeList,
 } from '../services/kube.js';
 
@@ -20,23 +21,63 @@ function parseQuantity(q: string | undefined): number {
 }
 
 // Transform ClusterQueue to frontend quota node format
-function transformClusterQueue(cq: KueueClusterQueue) {
+function transformClusterQueue(cq: KueueClusterQueue, resourceFlavors: Map<string, KueueResourceFlavor>) {
   let nominalGpus = 0;
   let usedGpus = 0;
   let borrowedGpus = 0;
   let borrowingLimit = 0;
   let lendingLimit = 0;
 
+  // Extract flavor information
+  const flavors: Array<{
+    name: string;
+    nodeLabels: Record<string, string> | null;
+    nodeTaints: Array<{ key: string; value?: string; effect: string }> | null;
+    resources: Array<{
+      name: string;
+      nominalQuota: number;
+      nominalQuotaRaw: string;
+      borrowingLimit: number;
+      borrowingLimitRaw: string;
+      lendingLimit: number;
+      lendingLimitRaw: string;
+    }>;
+  }> = [];
+
   // Sum up GPU quotas from all flavors
   for (const rg of cq.spec.resourceGroups || []) {
     for (const flavor of rg.flavors || []) {
+      const flavorResources: typeof flavors[0]['resources'] = [];
       for (const resource of flavor.resources || []) {
+        const nominal = parseQuantity(resource.nominalQuota);
+        const bLimit = parseQuantity(resource.borrowingLimit);
+        const lLimit = parseQuantity(resource.lendingLimit);
+
+        flavorResources.push({
+          name: resource.name,
+          nominalQuota: nominal,
+          nominalQuotaRaw: resource.nominalQuota || '0',
+          borrowingLimit: bLimit,
+          borrowingLimitRaw: resource.borrowingLimit || '0',
+          lendingLimit: lLimit,
+          lendingLimitRaw: resource.lendingLimit || '0',
+        });
+
         if (resource.name === 'nvidia.com/gpu') {
-          nominalGpus += parseQuantity(resource.nominalQuota);
-          borrowingLimit += parseQuantity(resource.borrowingLimit);
-          lendingLimit += parseQuantity(resource.lendingLimit);
+          nominalGpus += nominal;
+          borrowingLimit += bLimit;
+          lendingLimit += lLimit;
         }
       }
+
+      // Get the ResourceFlavor spec
+      const resourceFlavor = resourceFlavors.get(flavor.name);
+      flavors.push({
+        name: flavor.name,
+        nodeLabels: resourceFlavor?.spec?.nodeLabels || null,
+        nodeTaints: resourceFlavor?.spec?.nodeTaints || null,
+        resources: flavorResources,
+      });
     }
   }
 
@@ -63,6 +104,13 @@ function transformClusterQueue(cq: KueueClusterQueue) {
     priority: 0,
     admittedWorkloads: cq.status?.admittedWorkloads || 0,
     pendingWorkloads: cq.status?.pendingWorkloads || 0,
+    // Configuration
+    config: {
+      queueingStrategy: cq.spec.queueingStrategy || 'BestEffortFIFO',
+      flavors,
+      flavorFungibility: cq.spec.flavorFungibility || null,
+      preemption: cq.spec.preemption || null,
+    },
   };
 }
 
@@ -140,9 +188,20 @@ router.get('/clusterqueues', requireAuth, async (req: Request, res: Response) =>
     }
 
     const client = createKubeClient(token);
-    const data = await client.get<KubeList<KueueClusterQueue>>(KUEUE_API.clusterQueues);
 
-    const queues = data.items.map(transformClusterQueue);
+    // Fetch both ClusterQueues and ResourceFlavors
+    const [cqData, rfData] = await Promise.all([
+      client.get<KubeList<KueueClusterQueue>>(KUEUE_API.clusterQueues),
+      client.get<KubeList<KueueResourceFlavor>>(KUEUE_API.resourceFlavors),
+    ]);
+
+    // Create a map of ResourceFlavors by name
+    const resourceFlavors = new Map<string, KueueResourceFlavor>();
+    for (const rf of rfData.items) {
+      resourceFlavors.set(rf.metadata.name, rf);
+    }
+
+    const queues = cqData.items.map((cq) => transformClusterQueue(cq, resourceFlavors));
     const queuesWithLent = calculateLentGpus(queues);
     res.json({ clusterQueues: queuesWithLent });
   } catch (err) {
@@ -184,12 +243,19 @@ router.get('/quotas', requireAuth, async (req: Request, res: Response) => {
 
     const client = createKubeClient(token);
 
-    const [cqData, lqData] = await Promise.all([
+    const [cqData, lqData, rfData] = await Promise.all([
       client.get<KubeList<KueueClusterQueue>>(KUEUE_API.clusterQueues),
       client.get<KubeList<KueueLocalQueue>>(KUEUE_API.localQueues),
+      client.get<KubeList<KueueResourceFlavor>>(KUEUE_API.resourceFlavors),
     ]);
 
-    const clusterQueues = cqData.items.map(transformClusterQueue);
+    // Create a map of ResourceFlavors by name
+    const resourceFlavors = new Map<string, KueueResourceFlavor>();
+    for (const rf of rfData.items) {
+      resourceFlavors.set(rf.metadata.name, rf);
+    }
+
+    const clusterQueues = cqData.items.map((cq) => transformClusterQueue(cq, resourceFlavors));
     const localQueues = lqData.items.map(transformLocalQueue);
 
     // Build hierarchy: cohorts -> clusterQueues -> localQueues

@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { api, type AuthStatus } from '../services/api';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { api, setOnAuthError, type AuthStatus } from '../services/api';
 
 interface AuthContextValue {
   isAuthenticated: boolean;
@@ -19,6 +19,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthStatus['user'] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Handle auth errors from API calls (e.g., expired token)
+  const handleAuthError = useCallback(() => {
+    setIsAuthenticated(false);
+    setUser(null);
+    setError('Session expired. Please login again.');
+  }, []);
+
+  // Register the auth error handler
+  useEffect(() => {
+    setOnAuthError(handleAuthError);
+    return () => setOnAuthError(() => {});
+  }, [handleAuthError]);
+
   const checkAuth = async () => {
     try {
       setIsLoading(true);
@@ -26,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const status = await api.checkAuth();
       setIsAuthenticated(status.authenticated);
       setUser(status.user || null);
-    } catch (err) {
+    } catch {
       setIsAuthenticated(false);
       setUser(null);
       // Don't set error for initial auth check failure

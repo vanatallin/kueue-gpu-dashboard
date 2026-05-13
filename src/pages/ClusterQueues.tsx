@@ -1,13 +1,36 @@
-import { useState, useMemo } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useState, useMemo, useCallback } from 'react';
 import { useClusterQueues } from '../hooks/useKueueData';
-import { Loader2, AlertCircle, LogIn, Layers, CheckCircle, Clock, ArrowRightLeft } from 'lucide-react';
-import { Button } from '../components/ui/Button';
+import { ClusterQueueConfigPopover } from '../components/queues/ClusterQueueConfigPopover';
+import { Loader2, AlertCircle, Layers, CheckCircle, Clock, ArrowRightLeft, Info } from 'lucide-react';
+import type { ClusterQueueInfo } from '../services/api';
 
 export function ClusterQueues() {
-  const { isAuthenticated, login } = useAuth();
   const { clusterQueues, localQueues, isLoading, error } = useClusterQueues();
   const [selectedCohort, setSelectedCohort] = useState<string | null>(null);
+
+  // Config popover state
+  const [configPopover, setConfigPopover] = useState<{
+    queue: ClusterQueueInfo;
+    rect: DOMRect;
+  } | null>(null);
+
+  const handleConfigClick = useCallback((
+    e: React.MouseEvent<HTMLButtonElement>,
+    queue: ClusterQueueInfo
+  ) => {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    // Toggle if clicking the same queue
+    if (configPopover?.queue.id === queue.id) {
+      setConfigPopover(null);
+    } else {
+      setConfigPopover({ queue, rect });
+    }
+  }, [configPopover?.queue.id]);
+
+  const closeConfigPopover = useCallback(() => {
+    setConfigPopover(null);
+  }, []);
 
   // Get unique cohorts
   const cohorts = useMemo(() => {
@@ -49,24 +72,6 @@ export function ClusterQueues() {
   const getLocalQueuesForCQ = (cqName: string) => {
     return localQueues.filter((lq) => lq.clusterQueue === cqName);
   };
-
-  // Show login prompt if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <div className="text-center">
-          <h2 className="text-lg font-medium text-text-primary mb-2">Login Required</h2>
-          <p className="text-sm text-text-secondary mb-4">
-            Connect to your OpenShift cluster to view cluster queues.
-          </p>
-        </div>
-        <Button variant="primary" onClick={login} className="gap-2">
-          <LogIn size={16} />
-          Login with OpenShift
-        </Button>
-      </div>
-    );
-  }
 
   if (isLoading) {
     return (
@@ -155,8 +160,22 @@ export function ClusterQueues() {
               >
                 {/* Header */}
                 <div className="mb-4">
-                  <div className="text-[11px] text-text-muted uppercase tracking-wide mb-1">
-                    {cq.cohort || 'default'}
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-[11px] text-text-muted uppercase tracking-wide">
+                      {cq.cohort || 'default'}
+                    </div>
+                    <button
+                      onClick={(e) => handleConfigClick(e, cq)}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className={`p-1 rounded-md transition-colors ${
+                        configPopover?.queue.id === cq.id
+                          ? 'bg-primary/20 text-primary'
+                          : 'text-text-muted hover:text-text-primary hover:bg-surface-2'
+                      }`}
+                      title="View configuration"
+                    >
+                      <Info size={14} />
+                    </button>
                   </div>
                   <h3 className="text-sm font-medium text-text-primary truncate" title={cq.name}>
                     {cq.name}
@@ -265,6 +284,15 @@ export function ClusterQueues() {
             );
           })}
         </div>
+
+        {/* Config Popover */}
+        <ClusterQueueConfigPopover
+          queueName={configPopover?.queue.name || ''}
+          config={configPopover?.queue.config}
+          isOpen={configPopover !== null}
+          onClose={closeConfigPopover}
+          anchorRect={configPopover?.rect || null}
+        />
       </div>
     </div>
   );

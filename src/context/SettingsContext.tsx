@@ -6,6 +6,7 @@ interface Settings {
   autoRefreshEnabled: boolean;
   autoRefreshInterval: number; // in seconds
   demoSliderEnabled: boolean;
+  demoMode: boolean; // When true, show demo data instead of live API
   copilotEnabled: boolean;
   theme: Theme;
 }
@@ -13,12 +14,14 @@ interface Settings {
 interface SettingsContextValue {
   settings: Settings;
   updateSettings: (updates: Partial<Settings>) => void;
+  setSettings: React.Dispatch<React.SetStateAction<Settings>>;
 }
 
 const DEFAULT_SETTINGS: Settings = {
   autoRefreshEnabled: true,
   autoRefreshInterval: 10,
   demoSliderEnabled: false,
+  demoMode: false,
   copilotEnabled: true,
   theme: 'dark',
 };
@@ -64,7 +67,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <SettingsCtx.Provider value={{ settings, updateSettings }}>
+    <SettingsCtx.Provider value={{ settings, updateSettings, setSettings }}>
       {children}
     </SettingsCtx.Provider>
   );

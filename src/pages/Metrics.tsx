@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { useAuth } from '../context/AuthContext';
 import { useWorkloads, useQuotas, useNodes } from '../hooks/useKueueData';
 import { useDemo } from '../context/DemoContext';
+import { useSettings } from '../context/SettingsContext';
 import {
   Loader2,
   BarChart3,
@@ -67,16 +67,16 @@ interface QueueMetric {
 }
 
 export function Metrics() {
-  const { isAuthenticated } = useAuth();
+  const { settings } = useSettings();
   const { state: demoState } = useDemo();
   const { workloads: apiWorkloads, isLoading: workloadsLoading } = useWorkloads();
   const { quotas: apiQuotas, isLoading: quotasLoading } = useQuotas();
   const { nodes, summary, isLoading: nodesLoading, refetch: refetchNodes } = useNodes();
 
-  // Use real data if authenticated, otherwise demo data
-  const workloads = isAuthenticated ? apiWorkloads : demoState.workloads;
+  // Use demo data in demo mode, otherwise real data
+  const workloads = settings.demoMode ? demoState.workloads : apiWorkloads;
 
-  const isLoading = isAuthenticated && (workloadsLoading || quotasLoading || nodesLoading);
+  const isLoading = !settings.demoMode && (workloadsLoading || quotasLoading || nodesLoading);
 
   // Compute workload status distribution
   const workloadStats = useMemo(() => {
@@ -191,7 +191,7 @@ export function Metrics() {
             Real-time snapshot of cluster resource usage and workload distribution
           </p>
         </div>
-        {isAuthenticated && (
+        {!settings.demoMode && (
           <button
             onClick={() => refetchNodes()}
             className="flex items-center gap-2 px-3 py-2 text-[13px] text-text-secondary hover:text-text-primary hover:bg-surface-2 rounded-lg transition-colors"
@@ -202,7 +202,7 @@ export function Metrics() {
         )}
       </div>
 
-      {!isAuthenticated && (
+      {settings.demoMode && (
         <div className="bg-surface-2 border border-border rounded-lg p-3 text-[13px] text-text-secondary">
           Showing demo data. Login with OpenShift to see real metrics.
         </div>

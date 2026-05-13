@@ -1,5 +1,12 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+// Callback for handling auth errors (401)
+let onAuthErrorCallback: (() => void) | null = null;
+
+export function setOnAuthError(callback: () => void) {
+  onAuthErrorCallback = callback;
+}
+
 interface AuthStatus {
   authenticated: boolean;
   user?: {
@@ -69,6 +76,40 @@ interface MetricsResponse {
   memory: number;
 }
 
+interface FlavorResource {
+  name: string;
+  nominalQuota: number;
+  nominalQuotaRaw: string;
+  borrowingLimit: number;
+  borrowingLimitRaw: string;
+  lendingLimit: number;
+  lendingLimitRaw: string;
+}
+
+interface FlavorInfo {
+  name: string;
+  nodeLabels: Record<string, string> | null;
+  nodeTaints: Array<{ key: string; value?: string; effect: string }> | null;
+  resources: FlavorResource[];
+}
+
+interface ClusterQueueConfig {
+  queueingStrategy: 'BestEffortFIFO' | 'StrictFIFO';
+  flavors: FlavorInfo[];
+  flavorFungibility: {
+    whenCanBorrow?: 'Borrow' | 'TryNextFlavor';
+    whenCanPreempt?: 'Preempt' | 'TryNextFlavor';
+  } | null;
+  preemption: {
+    reclaimWithinCohort?: 'Never' | 'LowerPriority' | 'Any';
+    borrowWithinCohort?: {
+      policy?: 'Never' | 'LowerPriority' | 'Any';
+      maxPriorityThreshold?: number;
+    };
+    withinClusterQueue?: 'Never' | 'LowerPriority' | 'LowerOrNewerEqualPriority';
+  } | null;
+}
+
 interface ClusterQueueInfo {
   id: string;
   name: string;
@@ -83,6 +124,7 @@ interface ClusterQueueInfo {
   priority: number;
   admittedWorkloads: number;
   pendingWorkloads: number;
+  config?: ClusterQueueConfig;
 }
 
 interface LocalQueueInfo {
@@ -110,6 +152,10 @@ async function fetchApi<T>(path: string): Promise<T> {
 
   if (!response.ok) {
     if (response.status === 401) {
+      // Notify auth context about the auth failure
+      if (onAuthErrorCallback) {
+        onAuthErrorCallback();
+      }
       throw new Error('Not authenticated');
     }
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
@@ -161,6 +207,9 @@ export type {
   NodesResponse,
   MetricsResponse,
   ClusterQueueInfo,
+  ClusterQueueConfig,
+  FlavorInfo,
+  FlavorResource,
   LocalQueueInfo,
   ClusterQueuesResponse,
   LocalQueuesResponse,

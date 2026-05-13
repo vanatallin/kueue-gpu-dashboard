@@ -1,13 +1,11 @@
 import { useMemo } from 'react';
-import { useAuth } from '../context/AuthContext';
 import { useQuotas, useNodes } from '../hooks/useKueueData';
 import { GaugeChart } from '../components/charts/GaugeChart';
 import { DonutChart } from '../components/charts/DonutChart';
 import { HeatmapGrid } from '../components/charts/HeatmapGrid';
 import { HorizontalBarChart } from '../components/charts/HorizontalBarChart';
 import { GpuVendorChart } from '../components/charts/GpuVendorChart';
-import { Loader2, AlertCircle, LogIn } from 'lucide-react';
-import { Button } from '../components/ui/Button';
+import { Loader2, AlertCircle } from 'lucide-react';
 import type { QuotaNode } from '../types/kueue';
 
 function Card({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) {
@@ -20,7 +18,6 @@ function Card({ title, children, className = '' }: { title: string; children: Re
 }
 
 export function ResourcePools() {
-  const { isAuthenticated, login } = useAuth();
   const { quotas, isLoading: quotasLoading, error: quotasError } = useQuotas();
   const { nodes, summary, gpuTypes, isLoading: nodesLoading, error: nodesError } = useNodes();
 
@@ -114,24 +111,6 @@ export function ResourcePools() {
       return { type: gt.type, vendor, utilized };
     }).slice(0, 5); // Top 5 GPU types
   }, [gpuTypes, nodes]);
-
-  // Show login prompt if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <div className="text-center">
-          <h2 className="text-lg font-medium text-text-primary mb-2">Login Required</h2>
-          <p className="text-sm text-text-secondary mb-4">
-            Connect to your OpenShift cluster to view resource pool data.
-          </p>
-        </div>
-        <Button variant="primary" onClick={login} className="gap-2">
-          <LogIn size={16} />
-          Login with OpenShift
-        </Button>
-      </div>
-    );
-  }
 
   const isLoading = quotasLoading || nodesLoading;
   const error = quotasError || nodesError;

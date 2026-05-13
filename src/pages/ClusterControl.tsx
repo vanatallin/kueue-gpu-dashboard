@@ -1,15 +1,11 @@
 import { useMemo, useState, useCallback } from 'react';
-import { useAuth } from '../context/AuthContext';
 import { useWorkloads, useNodes, useQuotas } from '../hooks/useKueueData';
 import { MetricCard } from '../components/cards/MetricCard';
 import { QueueWorkloadsPopover } from '../components/queues/QueueWorkloadsPopover';
-import { Loader2, AlertCircle, LogIn, Info, AlertTriangle, CheckCircle } from 'lucide-react';
-import { Button } from '../components/ui/Button';
+import { Loader2, AlertCircle, Info, AlertTriangle, CheckCircle } from 'lucide-react';
 import type { QuotaNode } from '../types/kueue';
 
 export function ClusterControl() {
-  const { isAuthenticated, login } = useAuth();
-
   // Popover state
   const [selectedQueue, setSelectedQueue] = useState<{
     name: string;
@@ -152,24 +148,6 @@ export function ClusterControl() {
 
     return items;
   }, [metrics, workloadStats]);
-
-  // Show login prompt if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <div className="text-center">
-          <h2 className="text-lg font-medium text-text-primary mb-2">Login Required</h2>
-          <p className="text-sm text-text-secondary mb-4">
-            Connect to your OpenShift cluster to view real-time Kueue data.
-          </p>
-        </div>
-        <Button variant="primary" onClick={login} className="gap-2">
-          <LogIn size={16} />
-          Login with OpenShift
-        </Button>
-      </div>
-    );
-  }
 
   const isLoading = workloadsLoading || nodesLoading || quotasLoading;
   const error = workloadsError || nodesError;

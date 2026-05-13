@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { useAuth } from '../context/AuthContext';
 import { useDemo } from '../context/DemoContext';
 import { useSearch } from '../context/SearchContext';
+import { useSettings } from '../context/SettingsContext';
 import { useWorkloads } from '../hooks/useKueueData';
 import { useWorkloadFilters } from '../hooks/useWorkloadFilters';
 import { useWorkloadSort } from '../hooks/useWorkloadSort';
@@ -11,7 +11,7 @@ import { EventLog } from '../components/workloads/EventLog';
 import { Loader2, AlertCircle } from 'lucide-react';
 
 export function Workloads() {
-  const { isAuthenticated } = useAuth();
+  const { settings } = useSettings();
   const { state: demoState } = useDemo();
   const { query } = useSearch();
   const { workloads, isLoading, error } = useWorkloads();
@@ -27,9 +27,9 @@ export function Workloads() {
   } = useWorkloadFilters();
   const { sortConfig, handleSort, applySort } = useWorkloadSort();
 
-  // Use real data if authenticated, otherwise demo data
-  const allWorkloads = isAuthenticated ? workloads : demoState.workloads;
-  const displayEvents = isAuthenticated ? [] : demoState.events; // Events not available from API yet
+  // Use demo data in demo mode, otherwise real data
+  const allWorkloads = settings.demoMode ? demoState.workloads : workloads;
+  const displayEvents = settings.demoMode ? demoState.events : []; // Events not available from API yet
 
   // Combined pipeline: search -> filter -> sort
   const displayWorkloads = useMemo(() => {
@@ -57,7 +57,7 @@ export function Workloads() {
     return result;
   }, [allWorkloads, query, applyFilters, applySort]);
 
-  if (isAuthenticated && isLoading) {
+  if (!settings.demoMode && isLoading) {
     return (
       <div className="flex items-center justify-center h-64 gap-3 text-text-muted">
         <Loader2 size={20} className="animate-spin" />
@@ -66,7 +66,7 @@ export function Workloads() {
     );
   }
 
-  if (isAuthenticated && error) {
+  if (!settings.demoMode && error) {
     return (
       <div className="flex items-center justify-center h-64 gap-3 text-critical">
         <AlertCircle size={20} />
@@ -77,7 +77,7 @@ export function Workloads() {
 
   return (
     <div className="flex flex-col gap-6 max-w-[1200px]">
-      {!isAuthenticated && (
+      {settings.demoMode && (
         <div className="bg-surface-2 border border-border rounded-lg p-3 text-[13px] text-text-secondary">
           Showing demo data. Login with OpenShift to see real workloads.
         </div>

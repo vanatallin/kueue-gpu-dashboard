@@ -100,6 +100,7 @@ export interface KueueClusterQueue {
   };
   spec: {
     cohort?: string;
+    queueingStrategy?: 'BestEffortFIFO' | 'StrictFIFO';
     resourceGroups?: Array<{
       coveredResources: string[];
       flavors: Array<{
@@ -112,9 +113,17 @@ export interface KueueClusterQueue {
         }>;
       }>;
     }>;
+    flavorFungibility?: {
+      whenCanBorrow?: 'Borrow' | 'TryNextFlavor';
+      whenCanPreempt?: 'Preempt' | 'TryNextFlavor';
+    };
     preemption?: {
-      reclaimWithinCohort: string;
-      withinClusterQueue: string;
+      reclaimWithinCohort?: 'Never' | 'LowerPriority' | 'Any';
+      borrowWithinCohort?: {
+        policy?: 'Never' | 'LowerPriority' | 'Any';
+        maxPriorityThreshold?: number;
+      };
+      withinClusterQueue?: 'Never' | 'LowerPriority' | 'LowerOrNewerEqualPriority';
     };
   };
   status?: {
@@ -159,6 +168,27 @@ export interface K8sNode {
     conditions: Array<{
       type: string;
       status: string;
+    }>;
+  };
+}
+
+export interface KueueResourceFlavor {
+  metadata: {
+    name: string;
+    uid: string;
+  };
+  spec?: {
+    nodeLabels?: Record<string, string>;
+    nodeTaints?: Array<{
+      key: string;
+      value?: string;
+      effect: string;
+    }>;
+    tolerations?: Array<{
+      key?: string;
+      operator?: string;
+      value?: string;
+      effect?: string;
     }>;
   };
 }
