@@ -7,6 +7,7 @@ import { HorizontalBarChart } from '../components/charts/HorizontalBarChart';
 import { GpuVendorChart } from '../components/charts/GpuVendorChart';
 import { Loader2, AlertCircle } from 'lucide-react';
 import type { QuotaNode } from '../types/kueue';
+import { percentUsed } from '../utils/formatResources';
 
 function Card({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) {
   return (
@@ -23,16 +24,32 @@ export function ResourcePools() {
 
   // Extract ClusterQueues as resource pools
   const clusterQueues = useMemo(() => {
-    const queues: Array<{ name: string; usedGpus: number; nominalGpus: number; utilization: number }> = [];
+    const queues: Array<{
+      name: string;
+      usedGpus: number;
+      nominalGpus: number;
+      usedCpu: number;
+      nominalCpu: number;
+      usedMemory: number;
+      nominalMemory: number;
+      gpuUtilization: number;
+      cpuUtilization: number;
+      memoryUtilization: number;
+    }> = [];
     const extractQueues = (nodes: QuotaNode[]) => {
       for (const node of nodes) {
         if (node.type === 'clusterQueue') {
-          const utilization = node.nominalGpus > 0 ? Math.round((node.usedGpus / node.nominalGpus) * 100) : 0;
           queues.push({
             name: node.name,
             usedGpus: node.usedGpus,
             nominalGpus: node.nominalGpus,
-            utilization,
+            usedCpu: node.usedCpu ?? 0,
+            nominalCpu: node.nominalCpu ?? 0,
+            usedMemory: node.usedMemory ?? 0,
+            nominalMemory: node.nominalMemory ?? 0,
+            gpuUtilization: percentUsed(node.usedGpus, node.nominalGpus),
+            cpuUtilization: percentUsed(node.usedCpu ?? 0, node.nominalCpu ?? 0),
+            memoryUtilization: percentUsed(node.usedMemory ?? 0, node.nominalMemory ?? 0),
           });
         }
         if (node.children) extractQueues(node.children);
@@ -45,7 +62,17 @@ export function ResourcePools() {
   // Calculate GPU efficiency score based on utilization
   const gpuEfficiencyScore = useMemo(() => {
     if (!summary || summary.allocatableGpus === 0) return 0;
-    return Math.round((summary.gpusInUse / summary.allocatableGpus) * 100);
+    return percentUsed(summary.gpusInUse, summary.allocatableGpus);
+  }, [summary]);
+
+  const cpuUtilizationScore = useMemo(() => {
+    if (!summary || summary.cpuAllocatable === 0) return 0;
+    return percentUsed(summary.cpuInUse, summary.cpuAllocatable);
+  }, [summary]);
+
+  const memoryUtilizationScore = useMemo(() => {
+    if (!summary || summary.memoryAllocatableGi === 0) return 0;
+    return percentUsed(summary.memoryInUseGi, summary.memoryAllocatableGi);
   }, [summary]);
 
   // Calculate GPU utilization data for donut chart
@@ -57,11 +84,24 @@ export function ResourcePools() {
     return {
       allocated: summary.gpusInUse,
       unallocated: summary.allocatableGpus - summary.gpusInUse,
-      utilization: summary.allocatableGpus > 0 ? Math.round((summary.gpusInUse / summary.allocatableGpus) * 100) : 0,
+      utilization: percentUsed(summary.gpusInUse, summary.allocatableGpus),
       healthy: summary.healthyNodes,
       warning: unhealthyNodes,
     };
   }, [summary]);
+
+  const memoryUtilization = useMemo(() => {
+    if (!summary) {
+      return { allocated: 0, unallocated: 0, utilization: 0, healthy: 0, warning: 0 };
+    }
+    return {
+      allocated: summary.memoryInUseGi,
+      unallocated: summary.memoryAllocatableGi - summary.memoryInUseGi,
+      utilization: memoryUtilizationScore,
+      healthy: summary.healthyNodes,
+      warning: summary.totalNodes - summary.healthyNodes,
+    };
+  }, [summary, memoryUtilizationScore]);
 
   // Generate heatmap data from node GPU usage
   const gpuMemoryDevices = useMemo(() => {
@@ -82,17 +122,24 @@ export function ResourcePools() {
   // Top 5 most used resource pools (ClusterQueues)
   const topPools = useMemo(() => {
     return [...clusterQueues]
-      .sort((a, b) => b.utilization - a.utilization)
+      .sort((a, b) => b.gpuUtilization - a.gpuUtilization)
       .slice(0, 5)
-      .map(q => ({ name: q.name, utilized: q.utilization }));
+      .map(q => ({ name: q.name, utilized: q.gpuUtilization }));
   }, [clusterQueues]);
 
-  // Top 5 least used resource pools (ClusterQueues)
   const bottomPools = useMemo(() => {
     return [...clusterQueues]
-      .sort((a, b) => a.utilization - b.utilization)
+      .sort((a, b) => a.gpuUtilization - b.gpuUtilization)
       .slice(0, 5)
-      .map(q => ({ name: q.name, utilized: q.utilization }));
+      .map(q => ({ name: q.name, utilized: q.gpuUtilization }));
+  }, [clusterQueues]);
+
+  const topCpuPools = useMemo(() => {
+    return [...clusterQueues]
+      .filter((q) => q.nominalCpu > 0)
+      .sort((a, b) => b.cpuUtilization - a.cpuUtilization)
+      .slice(0, 5)
+      .map(q => ({ name: q.name, utilized: q.cpuUtilization }));
   }, [clusterQueues]);
 
   // GPU usage by vendor/type
@@ -151,12 +198,21 @@ export function ResourcePools() {
         <Card title="GPU Utilization" className="min-h-[220px]">
           <DonutChart {...gpuUtilization} />
         </Card>
-        <Card title="GPU Memory Utilization" className="min-h-[220px]">
+        <Card title="GPU Allocation by Device" className="min-h-[220px]">
           {gpuMemoryDevices.length > 0 ? (
             <HeatmapGrid values={gpuMemoryDevices} />
           ) : (
             <div className="text-text-muted text-sm">No GPU data available</div>
           )}
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-2 gap-6">
+        <Card title="CPU Utilization" className="min-h-[220px]">
+          <GaugeChart value={cpuUtilizationScore} />
+        </Card>
+        <Card title="Memory Utilization" className="min-h-[220px]">
+          <DonutChart {...memoryUtilization} />
         </Card>
       </div>
 
@@ -175,14 +231,22 @@ export function ResourcePools() {
             <div className="text-text-muted text-sm">No resource pools</div>
           )}
         </Card>
-        <Card title="GPU Usage by Vendor & Type">
-          {gpuByType.length > 0 ? (
-            <GpuVendorChart data={gpuByType} />
+        <Card title="Top 5 CPU Pools">
+          {topCpuPools.length > 0 ? (
+            <HorizontalBarChart data={topCpuPools} />
           ) : (
-            <div className="text-text-muted text-sm">No GPU types found</div>
+            <div className="text-text-muted text-sm">No CPU quotas configured</div>
           )}
         </Card>
       </div>
+
+      {gpuByType.length > 0 && (
+        <div className="grid grid-cols-1 gap-6">
+          <Card title="GPU Usage by Vendor & Type">
+            <GpuVendorChart data={gpuByType} />
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

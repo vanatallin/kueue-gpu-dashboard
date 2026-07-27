@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useSearch } from '../context/SearchContext';
 import { useNodes } from '../hooks/useKueueData';
 import { Loader2, AlertCircle, CheckCircle, XCircle, Cpu, HardDrive, RefreshCw } from 'lucide-react';
+import { formatCpu, formatMemoryGi } from '../utils/formatResources';
 
 export function Nodes() {
   const { query } = useSearch();
@@ -43,7 +44,7 @@ export function Nodes() {
         <div>
           <h2 className="text-lg font-semibold text-text-primary">Cluster Nodes</h2>
           <p className="text-[13px] text-text-secondary mt-0.5">
-            View GPU nodes and their specifications
+            View GPU nodes and their CPU, memory, and GPU resources
           </p>
         </div>
         <button
@@ -57,11 +58,11 @@ export function Nodes() {
 
       {/* Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
           <SummaryCard
-            label="Total Nodes"
-            value={summary.totalNodes}
-            subtext={`${summary.healthyNodes} healthy`}
+            label="GPU Nodes"
+            value={summary.gpuNodes}
+            subtext={`${summary.healthyGpuNodes} healthy · ${summary.totalClusterNodes} cluster total`}
           />
           <SummaryCard
             label="Total GPUs"
@@ -72,6 +73,16 @@ export function Nodes() {
             label="Allocatable GPUs"
             value={summary.allocatableGpus}
             subtext="available for workloads"
+          />
+          <SummaryCard
+            label="CPU In Use"
+            value={formatCpu(summary.cpuInUse)}
+            subtext={`of ${formatCpu(summary.cpuAllocatable)} cores`}
+          />
+          <SummaryCard
+            label="Memory In Use"
+            value={`${formatMemoryGi(summary.memoryInUseGi)} GiB`}
+            subtext={`of ${formatMemoryGi(summary.memoryAllocatableGi)} GiB`}
           />
           <SummaryCard
             label="GPU Types"
@@ -121,14 +132,20 @@ export function Nodes() {
                 Allocatable
               </th>
               <th className="text-center text-[11px] font-medium text-text-muted uppercase tracking-wide px-4 py-3">
-                In Use
+                GPUs In Use
+              </th>
+              <th className="text-center text-[11px] font-medium text-text-muted uppercase tracking-wide px-4 py-3">
+                CPU
+              </th>
+              <th className="text-center text-[11px] font-medium text-text-muted uppercase tracking-wide px-4 py-3">
+                Memory
               </th>
             </tr>
           </thead>
           <tbody>
             {filteredNodes.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-8 text-text-muted text-[13px]">
+                <td colSpan={8} className="text-center py-8 text-text-muted text-[13px]">
                   {query ? 'No nodes match your search' : 'No GPU nodes found in the cluster'}
                 </td>
               </tr>
@@ -177,6 +194,16 @@ export function Nodes() {
                       {node.gpuInUse || 0}
                     </span>
                   </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="text-[13px] text-text-secondary">
+                      {formatCpu(node.cpuInUse)} / {formatCpu(node.cpuAllocatable)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="text-[13px] text-text-secondary">
+                      {formatMemoryGi(node.memoryInUse)} / {formatMemoryGi(node.memoryAllocatable)} GiB
+                    </span>
+                  </td>
                 </tr>
               ))
             )}
@@ -187,7 +214,7 @@ export function Nodes() {
   );
 }
 
-function SummaryCard({ label, value, subtext }: { label: string; value: number; subtext: string }) {
+function SummaryCard({ label, value, subtext }: { label: string; value: number | string; subtext: string }) {
   return (
     <div className="bg-surface rounded-[12px] border border-border p-4 shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
       <p className="text-[11px] text-text-muted uppercase tracking-wide mb-1">{label}</p>

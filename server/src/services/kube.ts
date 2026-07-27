@@ -39,6 +39,7 @@ export const KUEUE_API = {
 
 export const K8S_API = {
   nodes: '/api/v1/nodes',
+  nodeMetrics: '/apis/metrics.k8s.io/v1beta1/nodes',
   namespaces: '/api/v1/namespaces',
 };
 

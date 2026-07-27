@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Cpu, Clock, ArrowRight, Zap, Eye, EyeOff } from 'lucide-react';
+import { formatCpu, formatMemoryGi, percentUsed } from '../../utils/formatResources';
 import type { Workload } from '../../types/kueue';
 
 interface QueueWorkloadsPopoverProps {
@@ -8,6 +9,10 @@ interface QueueWorkloadsPopoverProps {
   workloads: Workload[];
   usedGpus: number;
   nominalGpus: number;
+  usedCpu?: number;
+  nominalCpu?: number;
+  usedMemory?: number;
+  nominalMemory?: number;
   isOpen: boolean;
   onClose: () => void;
   anchorRect: DOMRect | null;
@@ -26,6 +31,10 @@ export function QueueWorkloadsPopover({
   workloads,
   usedGpus,
   nominalGpus,
+  usedCpu = 0,
+  nominalCpu = 0,
+  usedMemory = 0,
+  nominalMemory = 0,
   isOpen,
   onClose,
   anchorRect,
@@ -106,7 +115,9 @@ export function QueueWorkloadsPopover({
   };
 
   const position = getPosition();
-  const utilization = nominalGpus > 0 ? Math.round((usedGpus / nominalGpus) * 100) : 0;
+  const gpuUtil = percentUsed(usedGpus, nominalGpus);
+  const cpuUtil = percentUsed(usedCpu, nominalCpu);
+  const memUtil = percentUsed(usedMemory, nominalMemory);
 
   return (
     <AnimatePresence>
@@ -124,11 +135,22 @@ export function QueueWorkloadsPopover({
           <div className="flex items-center justify-between p-4 border-b border-border bg-surface-2">
             <div className="flex flex-col gap-1">
               <h3 className="text-sm font-medium text-text-primary">{queueName}</h3>
-              <div className="flex items-center gap-3 text-[11px] text-text-muted">
+              <div className="flex flex-col gap-0.5 text-[11px] text-text-muted">
                 <span className="flex items-center gap-1">
                   <Zap size={12} className="text-primary" />
-                  {usedGpus} / {nominalGpus} GPUs ({utilization}%)
+                  {usedGpus} / {nominalGpus} GPUs ({gpuUtil}%)
                 </span>
+                {nominalCpu > 0 && (
+                  <span className="flex items-center gap-1">
+                    <Cpu size={12} className="text-compute" />
+                    {formatCpu(usedCpu)} / {formatCpu(nominalCpu)} CPU ({cpuUtil}%)
+                  </span>
+                )}
+                {nominalMemory > 0 && (
+                  <span>
+                    {formatMemoryGi(usedMemory)} / {formatMemoryGi(nominalMemory)} GiB ({memUtil}%)
+                  </span>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -161,10 +183,10 @@ export function QueueWorkloadsPopover({
             <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
               <motion.div
                 initial={{ width: 0 }}
-                animate={{ width: `${Math.min(utilization, 100)}%` }}
+                animate={{ width: `${Math.min(gpuUtil, 100)}%` }}
                 transition={{ duration: 0.5, ease: 'easeOut' }}
                 className={`h-full rounded-full ${
-                  utilization > 90 ? 'bg-warning' : 'bg-primary'
+                  gpuUtil > 90 ? 'bg-warning' : 'bg-primary'
                 }`}
               />
             </div>
@@ -280,7 +302,11 @@ function WorkloadItem({ workload }: { workload: Workload }) {
         <span className={`text-[12px] font-medium ${
           isGpuWorkload ? 'text-primary' : 'text-text-muted'
         }`}>
-          {isGpuWorkload ? workload.gpusRequested : 'CPU'}
+          {isGpuWorkload
+            ? workload.gpusRequested
+            : workload.cpuRequested
+              ? `${formatCpu(workload.cpuRequested)} CPU`
+              : 'CPU'}
         </span>
       </div>
     </motion.div>

@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { QuotaNode } from '../../types/kueue';
 import { Button } from '../ui/Button';
+import { formatCpu, formatMemoryGi } from '../../utils/formatResources';
 
 interface QuotaEditPanelProps {
   node: QuotaNode;
@@ -53,6 +54,16 @@ export function QuotaEditPanel({ node, onSave, onClose }: QuotaEditPanelProps) {
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
         <Field label="Name" value={draft.name} onChange={(v) => set('name', v)} />
         <Field label="Nominal GPUs" value={draft.nominalGpus} onChange={(v) => set('nominalGpus', v)} type="number" />
+        {(draft.nominalCpu ?? 0) > 0 && (
+          <div className="bg-surface-2 rounded-lg p-3 border border-border text-[12px] text-text-secondary">
+            CPU quota: {formatCpu(draft.usedCpu ?? 0)} / {formatCpu(draft.nominalCpu ?? 0)} cores
+          </div>
+        )}
+        {(draft.nominalMemory ?? 0) > 0 && (
+          <div className="bg-surface-2 rounded-lg p-3 border border-border text-[12px] text-text-secondary">
+            Memory quota: {formatMemoryGi(draft.usedMemory ?? 0)} / {formatMemoryGi(draft.nominalMemory ?? 0)} GiB
+          </div>
+        )}
         <Field label="Borrowing Limit" value={draft.borrowingLimit} onChange={(v) => set('borrowingLimit', v)} type="number" />
         <Field label="Lending Limit" value={draft.lendingLimit} onChange={(v) => set('lendingLimit', v)} type="number" />
         <Field label="Priority" value={draft.priority} onChange={(v) => set('priority', v)} type="number" />

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth, getToken } from '../middleware/auth.js';
 import { createKubeClient, KUEUE_API, KueueWorkload, KubeList } from '../services/kube.js';
+import { parseCpu, parseMemory } from '../utils/resources.js';
 
 const router = Router();
 
@@ -39,13 +40,18 @@ function transformWorkload(w: KueueWorkload) {
     status = 'preempted';
   }
 
-  // Calculate GPU requests
+  // Calculate resource requests
   let gpusRequested = 0;
+  let cpuRequested = 0;
+  let memoryRequested = 0;
   for (const podSet of w.spec.podSets || []) {
     const count = podSet.count || 1;
     for (const container of podSet.template?.spec?.containers || []) {
-      const gpuRequest = container.resources?.requests?.['nvidia.com/gpu'] || '0';
+      const requests = container.resources?.requests || {};
+      const gpuRequest = requests['nvidia.com/gpu'] || '0';
       gpusRequested += count * parseInt(gpuRequest, 10);
+      cpuRequested += count * parseCpu(requests.cpu);
+      memoryRequested += count * parseMemory(requests.memory);
     }
   }
 
@@ -57,6 +63,8 @@ function transformWorkload(w: KueueWorkload) {
     type: getWorkloadType(w),
     priority: w.spec.priority && w.spec.priority > 0 ? 'high' : 'low',
     gpusRequested,
+    cpuRequested,
+    memoryRequested,
     status,
     pool: w.status?.admission?.clusterQueue || w.spec.queueName || 'unknown',
     progress: status === 'completed' ? 100 : status === 'running' ? 50 : 0,

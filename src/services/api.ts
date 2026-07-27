@@ -23,6 +23,8 @@ interface WorkloadResponse {
     team: string;
     priority: 'low' | 'high';
     gpusRequested: number;
+    cpuRequested: number;
+    memoryRequested: number;
     status: 'running' | 'pending' | 'preempted' | 'completed';
     pool: string;
     progress: number;
@@ -36,6 +38,11 @@ interface QuotaNode {
   type: 'cohort' | 'clusterQueue' | 'localQueue';
   nominalGpus: number;
   usedGpus: number;
+  nominalCpu: number;
+  usedCpu: number;
+  nominalMemory: number;
+  usedMemory: number;
+  borrowedGpus?: number;
   borrowingLimit: number;
   lendingLimit: number;
   priority: number;
@@ -53,6 +60,10 @@ interface NodesResponse {
     gpuCount: number;
     gpuAllocatable: number;
     gpuInUse: number;
+    cpuAllocatable: number;
+    cpuInUse: number;
+    memoryAllocatable: number;
+    memoryInUse: number;
     gpuType: string;
     healthy: boolean;
   }>;
@@ -60,8 +71,16 @@ interface NodesResponse {
     totalGpus: number;
     allocatableGpus: number;
     gpusInUse: number;
+    totalClusterNodes: number;
+    healthyClusterNodes: number;
+    gpuNodes: number;
+    healthyGpuNodes: number;
     totalNodes: number;
     healthyNodes: number;
+    cpuAllocatable: number;
+    cpuInUse: number;
+    memoryAllocatableGi: number;
+    memoryInUseGi: number;
   };
   gpuTypes: Array<{
     type: string;
@@ -71,7 +90,12 @@ interface NodesResponse {
 
 interface MetricsResponse {
   totalGpus: number;
+  allocatableGpus: number;
   usedGpus: number;
+  cpuAllocatable: number;
+  cpuInUse: number;
+  memoryAllocatableGi: number;
+  memoryInUseGi: number;
   compute: number;
   memory: number;
 }
@@ -117,6 +141,10 @@ interface ClusterQueueInfo {
   cohort?: string;
   nominalGpus: number;
   usedGpus: number;
+  nominalCpu: number;
+  usedCpu: number;
+  nominalMemory: number;
+  usedMemory: number;
   borrowedGpus: number;
   lentGpus: number;
   borrowingLimit: number;

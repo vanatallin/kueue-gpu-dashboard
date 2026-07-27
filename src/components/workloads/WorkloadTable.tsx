@@ -23,6 +23,8 @@ const COLUMNS: ColumnDef[] = [
   { key: 'namespace', label: 'Namespace' },
   { key: 'priority', label: 'Priority', sortable: 'priority' },
   { key: 'gpus', label: 'GPUs', sortable: 'gpusRequested' },
+  { key: 'cpu', label: 'CPU', sortable: 'cpuRequested' },
+  { key: 'memory', label: 'Memory', sortable: 'memoryRequested' },
   { key: 'status', label: 'Status', sortable: 'status' },
   { key: 'pool', label: 'Pool' },
 ];
