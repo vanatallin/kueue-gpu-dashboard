@@ -3,7 +3,7 @@ import type { Workload, WorkloadStatus } from '../types/kueue';
 
 export type SortDirection = 'asc' | 'desc';
 
-export type SortableField = 'priority' | 'gpusRequested' | 'status' | 'submittedAt';
+export type SortableField = 'priority' | 'gpusRequested' | 'cpuRequested' | 'memoryRequested' | 'status' | 'submittedAt';
 
 export interface SortColumn {
   field: SortableField;
@@ -37,6 +37,12 @@ function compareWorkloads(a: Workload, b: Workload, sortCol: SortColumn): number
       break;
     case 'gpusRequested':
       result = a.gpusRequested - b.gpusRequested;
+      break;
+    case 'cpuRequested':
+      result = (a.cpuRequested || 0) - (b.cpuRequested || 0);
+      break;
+    case 'memoryRequested':
+      result = (a.memoryRequested || 0) - (b.memoryRequested || 0);
       break;
     case 'status':
       result = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];

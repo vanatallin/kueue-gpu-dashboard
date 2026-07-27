@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useWorkloads, useQuotas, useNodes } from '../hooks/useKueueData';
+import { useWorkloads, useQuotas, useNodes, useMetrics } from '../hooks/useKueueData';
 import { useDemo } from '../context/DemoContext';
 import { useSettings } from '../context/SettingsContext';
 import {
@@ -10,8 +10,10 @@ import {
   TrendingUp,
   Users,
   Zap,
+  Cpu,
   RefreshCw,
 } from 'lucide-react';
+import { formatCpu, formatMemoryGi, percentUsed } from '../utils/formatResources';
 
 interface MetricCardProps {
   label: string;
@@ -62,8 +64,12 @@ function DistributionBar({ label, value, total, color }: DistributionBarProps) {
 interface QueueMetric {
   name: string;
   pending: number;
-  admitted: number;
-  total: number;
+  gpuUsed: number;
+  gpuTotal: number;
+  cpuUsed: number;
+  cpuTotal: number;
+  memoryUsed: number;
+  memoryTotal: number;
 }
 
 export function Metrics() {
@@ -72,11 +78,21 @@ export function Metrics() {
   const { workloads: apiWorkloads, isLoading: workloadsLoading } = useWorkloads();
   const { quotas: apiQuotas, isLoading: quotasLoading } = useQuotas();
   const { nodes, summary, isLoading: nodesLoading, refetch: refetchNodes } = useNodes();
+  const {
+    compute,
+    memory,
+    cpuInUse,
+    cpuAllocatable,
+    memoryInUseGi,
+    memoryAllocatableGi,
+    isLoading: metricsLoading,
+    refetch: refetchMetrics,
+  } = useMetrics();
 
   // Use demo data in demo mode, otherwise real data
   const workloads = settings.demoMode ? demoState.workloads : apiWorkloads;
 
-  const isLoading = !settings.demoMode && (workloadsLoading || quotasLoading || nodesLoading);
+  const isLoading = !settings.demoMode && (workloadsLoading || quotasLoading || nodesLoading || metricsLoading);
 
   // Compute workload status distribution
   const workloadStats = useMemo(() => {
@@ -103,13 +119,27 @@ export function Metrics() {
   const queueMetrics = useMemo(() => {
     const metrics: QueueMetric[] = [];
 
-    const collectQueues = (node: { name?: string; type?: string; usedGpus?: number; nominalGpus?: number; children?: unknown[] }) => {
+    const collectQueues = (node: {
+      name?: string;
+      type?: string;
+      usedGpus?: number;
+      nominalGpus?: number;
+      usedCpu?: number;
+      nominalCpu?: number;
+      usedMemory?: number;
+      nominalMemory?: number;
+      children?: unknown[];
+    }) => {
       if (node.type === 'clusterQueue' || node.type === 'localQueue') {
         metrics.push({
           name: node.name || 'Unknown',
-          pending: 0, // Would need real data
-          admitted: node.usedGpus || 0,
-          total: node.nominalGpus || 0,
+          pending: 0,
+          gpuUsed: node.usedGpus || 0,
+          gpuTotal: node.nominalGpus || 0,
+          cpuUsed: node.usedCpu || 0,
+          cpuTotal: node.nominalCpu || 0,
+          memoryUsed: node.usedMemory || 0,
+          memoryTotal: node.nominalMemory || 0,
         });
       }
       if (Array.isArray(node.children)) {
@@ -121,23 +151,48 @@ export function Metrics() {
     return metrics.slice(0, 5); // Top 5 queues
   }, [apiQuotas]);
 
-  // Compute GPU utilization
+  const cpuUtilization = useMemo(() => {
+    if (settings.demoMode && demoState.metrics) {
+      return {
+        percent: demoState.metrics.compute,
+        inUse: demoState.metrics.cpuInUse ?? 0,
+        total: demoState.metrics.cpuAllocatable ?? 0,
+      };
+    }
+    return {
+      percent: compute || percentUsed(cpuInUse, cpuAllocatable),
+      inUse: summary?.cpuInUse ?? cpuInUse,
+      total: summary?.cpuAllocatable ?? cpuAllocatable,
+    };
+  }, [settings.demoMode, demoState.metrics, compute, cpuInUse, cpuAllocatable, summary]);
+
+  const memoryUtilization = useMemo(() => {
+    if (settings.demoMode && demoState.metrics) {
+      return {
+        percent: demoState.metrics.memory,
+        inUse: demoState.metrics.memoryInUseGi ?? 0,
+        total: demoState.metrics.memoryAllocatableGi ?? 0,
+      };
+    }
+    return {
+      percent: memory || percentUsed(memoryInUseGi, memoryAllocatableGi),
+      inUse: summary?.memoryInUseGi ?? memoryInUseGi,
+      total: summary?.memoryAllocatableGi ?? memoryAllocatableGi,
+    };
+  }, [settings.demoMode, demoState.metrics, memory, memoryInUseGi, memoryAllocatableGi, summary]);
+
   const gpuUtilization = useMemo(() => {
-    // Use real GPU usage from nodes if available, otherwise calculate from workloads
     let allocated: number;
 
     if (summary?.gpusInUse !== undefined) {
-      // Use backend-calculated GPU usage (from pods)
       allocated = summary.gpusInUse;
     } else {
-      // Fallback: calculate from running/admitted workloads
       const runningWorkloads = workloads.filter(
         (w) => w.status?.toLowerCase() === 'running' || w.status?.toLowerCase() === 'admitted'
       );
       allocated = runningWorkloads.reduce((sum, w) => sum + (w.gpusRequested || 0), 0);
     }
 
-    // Get total from nodes summary, fallback to 64 for demo
     const total = summary?.allocatableGpus || 64;
     const available = Math.max(0, total - allocated);
 
@@ -149,13 +204,13 @@ export function Metrics() {
     };
   }, [summary, workloads]);
 
-  // Compute wait time statistics (mock for now, would need timestamps)
+  // Placeholder wait times until workload timestamps are available from the API
   const waitTimeStats = useMemo(() => {
-    const pendingWorkloads = workloads.filter((w) => w.status?.toLowerCase() === 'pending');
+    const pendingCount = workloads.filter((w) => w.status?.toLowerCase() === 'pending').length;
     return {
-      avgWaitMinutes: pendingWorkloads.length > 0 ? Math.round(Math.random() * 30 + 5) : 0,
-      maxWaitMinutes: pendingWorkloads.length > 0 ? Math.round(Math.random() * 60 + 15) : 0,
-      pendingCount: pendingWorkloads.length,
+      avgWaitMinutes: pendingCount > 0 ? pendingCount * 3 + 5 : 0,
+      maxWaitMinutes: pendingCount > 0 ? pendingCount * 5 + 15 : 0,
+      pendingCount,
     };
   }, [workloads]);
 
@@ -167,6 +222,18 @@ export function Metrics() {
       if (gpus <= 1) distribution.small++;
       else if (gpus <= 4) distribution.medium++;
       else if (gpus <= 8) distribution.large++;
+      else distribution.xlarge++;
+    });
+    return distribution;
+  }, [workloads]);
+
+  const cpuRequestDistribution = useMemo(() => {
+    const distribution = { small: 0, medium: 0, large: 0, xlarge: 0 };
+    workloads.forEach((w) => {
+      const cpu = w.cpuRequested || 0;
+      if (cpu <= 1) distribution.small++;
+      else if (cpu <= 4) distribution.medium++;
+      else if (cpu <= 8) distribution.large++;
       else distribution.xlarge++;
     });
     return distribution;
@@ -193,7 +260,10 @@ export function Metrics() {
         </div>
         {!settings.demoMode && (
           <button
-            onClick={() => refetchNodes()}
+            onClick={() => {
+              refetchNodes();
+              refetchMetrics();
+            }}
             className="flex items-center gap-2 px-3 py-2 text-[13px] text-text-secondary hover:text-text-primary hover:bg-surface-2 rounded-lg transition-colors"
           >
             <RefreshCw size={14} />
@@ -209,12 +279,24 @@ export function Metrics() {
       )}
 
       {/* Key Metrics */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <MetricCard
           label="GPU Utilization"
           value={`${gpuUtilization.utilizationPercent}%`}
           subtext={`${gpuUtilization.allocated} of ${gpuUtilization.total} GPUs`}
           icon={<Zap size={20} />}
+        />
+        <MetricCard
+          label="CPU Utilization"
+          value={`${cpuUtilization.percent}%`}
+          subtext={`${formatCpu(cpuUtilization.inUse)} of ${formatCpu(cpuUtilization.total)} cores`}
+          icon={<Cpu size={20} />}
+        />
+        <MetricCard
+          label="Memory Utilization"
+          value={`${memoryUtilization.percent}%`}
+          subtext={`${formatMemoryGi(memoryUtilization.inUse)} of ${formatMemoryGi(memoryUtilization.total)} GiB`}
+          icon={<TrendingUp size={20} />}
         />
         <MetricCard
           label="Active Workloads"
@@ -230,14 +312,14 @@ export function Metrics() {
         />
         <MetricCard
           label="Healthy Nodes"
-          value={summary?.healthyNodes || nodes.filter((n) => n.healthy).length || 0}
-          subtext={`${summary?.totalNodes || nodes.length || 0} total`}
+          value={summary?.healthyClusterNodes || summary?.healthyNodes || nodes.filter((n) => n.healthy).length || 0}
+          subtext={`${summary?.totalClusterNodes || summary?.totalNodes || nodes.length || 0} total · ${summary?.gpuNodes ?? nodes.length} GPU`}
           icon={<TrendingUp size={20} />}
         />
       </div>
 
       {/* Workload Distribution & GPU Usage */}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Workload Status Distribution */}
         <div className="bg-surface rounded-[12px] border border-border p-5 shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
           <div className="flex items-center gap-2 mb-4">
@@ -305,6 +387,39 @@ export function Metrics() {
             />
           </div>
         </div>
+
+        <div className="bg-surface rounded-[12px] border border-border p-5 shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+          <div className="flex items-center gap-2 mb-4">
+            <Cpu size={16} className="text-compute" />
+            <h3 className="text-[14px] font-medium text-text-primary">CPU Request Sizes</h3>
+          </div>
+          <div className="flex flex-col gap-3">
+            <DistributionBar
+              label="1 core"
+              value={cpuRequestDistribution.small}
+              total={workloadStats.total}
+              color="#3BA4F7"
+            />
+            <DistributionBar
+              label="2-4 cores"
+              value={cpuRequestDistribution.medium}
+              total={workloadStats.total}
+              color="#2B8DD6"
+            />
+            <DistributionBar
+              label="5-8 cores"
+              value={cpuRequestDistribution.large}
+              total={workloadStats.total}
+              color="#1E6FB8"
+            />
+            <DistributionBar
+              label="8+ cores"
+              value={cpuRequestDistribution.xlarge}
+              total={workloadStats.total}
+              color="#155A99"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Queue Performance */}
@@ -322,29 +437,35 @@ export function Metrics() {
                     Queue
                   </th>
                   <th className="text-center text-[11px] font-medium text-text-muted uppercase tracking-wide px-3 py-2">
-                    Quota
+                    GPU
                   </th>
                   <th className="text-center text-[11px] font-medium text-text-muted uppercase tracking-wide px-3 py-2">
-                    Used
+                    CPU
+                  </th>
+                  <th className="text-center text-[11px] font-medium text-text-muted uppercase tracking-wide px-3 py-2">
+                    Memory
                   </th>
                   <th className="text-left text-[11px] font-medium text-text-muted uppercase tracking-wide px-3 py-2 w-48">
-                    Utilization
+                    GPU Util
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {queueMetrics.map((queue) => {
-                  const utilization = queue.total > 0 ? (queue.admitted / queue.total) * 100 : 0;
+                  const utilization = queue.gpuTotal > 0 ? (queue.gpuUsed / queue.gpuTotal) * 100 : 0;
                   return (
                     <tr key={queue.name} className="border-b border-border last:border-0">
                       <td className="px-3 py-2.5 text-[13px] text-text-primary font-medium">
                         {queue.name}
                       </td>
                       <td className="px-3 py-2.5 text-[13px] text-text-secondary text-center">
-                        {queue.total} GPUs
+                        {queue.gpuUsed}/{queue.gpuTotal}
                       </td>
                       <td className="px-3 py-2.5 text-[13px] text-text-secondary text-center">
-                        {queue.admitted} GPUs
+                        {formatCpu(queue.cpuUsed)}/{formatCpu(queue.cpuTotal)}
+                      </td>
+                      <td className="px-3 py-2.5 text-[13px] text-text-secondary text-center">
+                        {formatMemoryGi(queue.memoryUsed)}/{formatMemoryGi(queue.memoryTotal)} GiB
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">

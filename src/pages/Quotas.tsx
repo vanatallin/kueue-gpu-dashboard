@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import type { QuotaNode } from '../types/kueue';
 import { QUOTA_TREE } from '../data/quotas';
 import { useSearch } from '../context/SearchContext';
@@ -8,6 +8,7 @@ import { QuotaTree } from '../components/quotas/QuotaTree';
 import { QuotaTable } from '../components/quotas/QuotaTable';
 import { QuotaEditPanel } from '../components/quotas/QuotaEditPanel';
 import { QuotaViewToggle } from '../components/quotas/QuotaViewToggle';
+import type { QuotaResourceView } from '../components/quotas/QuotaTreeNode';
 import { AnimatePresence } from 'framer-motion';
 import { Loader2, AlertCircle } from 'lucide-react';
 
@@ -67,6 +68,11 @@ function buildQuotaTree(quotas: QuotaNode[]): QuotaNode {
     type: 'cohort',
     nominalGpus: quotas.reduce((sum, q) => sum + q.nominalGpus, 0),
     usedGpus: quotas.reduce((sum, q) => sum + q.usedGpus, 0),
+    nominalCpu: quotas.reduce((sum, q) => sum + (q.nominalCpu ?? 0), 0),
+    usedCpu: quotas.reduce((sum, q) => sum + (q.usedCpu ?? 0), 0),
+    nominalMemory: quotas.reduce((sum, q) => sum + (q.nominalMemory ?? 0), 0),
+    usedMemory: quotas.reduce((sum, q) => sum + (q.usedMemory ?? 0), 0),
+    borrowedGpus: quotas.reduce((sum, q) => sum + (q.borrowedGpus ?? 0), 0),
     borrowingLimit: 0,
     lendingLimit: 0,
     priority: 0,
@@ -79,18 +85,22 @@ export function Quotas() {
   const { query } = useSearch();
   const { quotas: apiQuotas, isLoading, error } = useQuotas();
 
-  const [tree, setTree] = useState<QuotaNode>(QUOTA_TREE);
-  const [viewMode, setViewMode] = useState<ViewMode>('tree');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  // Update tree when API data changes
-  useEffect(() => {
-    if (!settings.demoMode && apiQuotas.length > 0) {
-      setTree(buildQuotaTree(apiQuotas));
-    } else if (settings.demoMode) {
-      setTree(QUOTA_TREE);
-    }
+  const sourceTree = useMemo(() => {
+    if (settings.demoMode) return QUOTA_TREE;
+    if (apiQuotas.length > 0) return buildQuotaTree(apiQuotas);
+    return QUOTA_TREE;
   }, [settings.demoMode, apiQuotas]);
+
+  const [tree, setTree] = useState(sourceTree);
+  const [prevSourceTree, setPrevSourceTree] = useState(sourceTree);
+  if (sourceTree !== prevSourceTree) {
+    setPrevSourceTree(sourceTree);
+    setTree(sourceTree);
+  }
+
+  const [viewMode, setViewMode] = useState<ViewMode>('tree');
+  const [resourceView, setResourceView] = useState<QuotaResourceView>('gpu');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Filter tree by search query
   const filteredTree = useMemo(() => {
@@ -129,10 +139,27 @@ export function Quotas() {
         <div>
           <h2 className="text-lg font-semibold text-text-primary">Quota Hierarchy</h2>
           <p className="text-[13px] text-text-secondary mt-0.5">
-            Manage GPU quotas across cohorts, cluster queues, and local queues.
+            Manage GPU, CPU, and memory quotas across cohorts, cluster queues, and local queues.
           </p>
         </div>
-        <QuotaViewToggle mode={viewMode} onChange={setViewMode} />
+        <div className="flex items-center gap-3">
+          <div className="flex rounded-lg border border-border overflow-hidden">
+            {(['gpu', 'cpu', 'memory'] as QuotaResourceView[]).map((view) => (
+              <button
+                key={view}
+                onClick={() => setResourceView(view)}
+                className={`px-3 py-1.5 text-[12px] font-medium uppercase transition-colors ${
+                  resourceView === view
+                    ? 'bg-primary text-white'
+                    : 'bg-surface text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                {view}
+              </button>
+            ))}
+          </div>
+          <QuotaViewToggle mode={viewMode} onChange={setViewMode} />
+        </div>
       </div>
 
       {settings.demoMode && (
@@ -148,9 +175,9 @@ export function Quotas() {
               No quotas match your search
             </div>
           ) : viewMode === 'tree' ? (
-            <QuotaTree root={filteredTree} selectedId={selectedId} onSelect={setSelectedId} />
+            <QuotaTree root={filteredTree} selectedId={selectedId} onSelect={setSelectedId} resourceView={resourceView} />
           ) : (
-            <QuotaTable root={filteredTree} selectedId={selectedId} onSelect={setSelectedId} />
+            <QuotaTable root={filteredTree} selectedId={selectedId} onSelect={setSelectedId} resourceView={resourceView} />
           )}
         </div>
 

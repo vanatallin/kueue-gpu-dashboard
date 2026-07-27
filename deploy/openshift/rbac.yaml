@@ -21,6 +21,11 @@ rules:
       - nodes
       - pods
     verbs: ["get", "list", "watch"]
+  # metrics-server for CPU/memory utilization
+  - apiGroups: ["metrics.k8s.io"]
+    resources:
+      - nodes
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

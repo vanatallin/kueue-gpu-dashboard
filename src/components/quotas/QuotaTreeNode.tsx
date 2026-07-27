@@ -3,6 +3,10 @@ import { ChevronRight, ChevronDown, Server, Layers, Inbox } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { QuotaNode } from '../../types/kueue';
 import { ProgressBar } from '../ui/ProgressBar';
+import { formatCpu, formatMemoryGi } from '../../utils/formatResources';
+import { CohortLendingBadge } from '../queues/CohortLendingBadge';
+
+export type QuotaResourceView = 'gpu' | 'cpu' | 'memory';
 
 const TYPE_CONFIG: Record<string, { icon: typeof Server; label: string; color: string }> = {
   cohort: { icon: Server, label: 'Cohort', color: 'var(--color-primary)' },
@@ -10,20 +14,51 @@ const TYPE_CONFIG: Record<string, { icon: typeof Server; label: string; color: s
   localQueue: { icon: Inbox, label: 'LocalQueue', color: 'var(--color-memory)' },
 };
 
+function getResourceValues(node: QuotaNode, view: QuotaResourceView) {
+  switch (view) {
+    case 'cpu':
+      return {
+        used: node.usedCpu ?? 0,
+        nominal: node.nominalCpu ?? 0,
+        label: 'CPU',
+        color: 'var(--color-compute)',
+        format: (v: number) => `${formatCpu(v)} cores`,
+      };
+    case 'memory':
+      return {
+        used: node.usedMemory ?? 0,
+        nominal: node.nominalMemory ?? 0,
+        label: 'Memory',
+        color: 'var(--color-memory)',
+        format: (v: number) => `${formatMemoryGi(v)} GiB`,
+      };
+    default:
+      return {
+        used: node.usedGpus,
+        nominal: node.nominalGpus,
+        label: 'GPUs',
+        color: TYPE_CONFIG[node.type]?.color || 'var(--color-primary)',
+        format: (v: number) => `${v} GPUs`,
+      };
+  }
+}
+
 interface QuotaTreeNodeProps {
   node: QuotaNode;
   depth: number;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  resourceView: QuotaResourceView;
 }
 
-export function QuotaTreeNode({ node, depth, selectedId, onSelect }: QuotaTreeNodeProps) {
+export function QuotaTreeNode({ node, depth, selectedId, onSelect, resourceView }: QuotaTreeNodeProps) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children.length > 0;
   const cfg = TYPE_CONFIG[node.type];
   const Icon = cfg.icon;
   const selected = selectedId === node.id;
-  const usagePct = node.nominalGpus > 0 ? Math.round((node.usedGpus / node.nominalGpus) * 100) : 0;
+  const resource = getResourceValues(node, resourceView);
+  const usagePct = resource.nominal > 0 ? Math.round((resource.used / resource.nominal) * 100) : 0;
 
   return (
     <div>
@@ -59,18 +94,22 @@ export function QuotaTreeNode({ node, depth, selectedId, onSelect }: QuotaTreeNo
           {cfg.label}
         </span>
 
+        {node.type === 'cohort' && resourceView === 'gpu' && (
+          <CohortLendingBadge gpuCount={node.borrowedGpus ?? 0} compact />
+        )}
+
         <div className="ml-auto flex items-center gap-3 shrink-0">
           <div className="w-20">
             <ProgressBar
-              value={node.usedGpus}
-              max={node.nominalGpus}
-              color={usagePct > 85 ? 'var(--color-warning)' : cfg.color}
+              value={resource.used}
+              max={resource.nominal || 1}
+              color={usagePct > 85 ? 'var(--color-warning)' : resource.color}
             />
           </div>
-          <span className="text-[11px] text-text-muted w-20 text-right">
-            {node.usedGpus}/{node.nominalGpus} GPUs
+          <span className="text-[11px] text-text-muted w-28 text-right">
+            {resource.format(resource.used)}/{resource.format(resource.nominal)}
           </span>
-          {node.borrowingLimit > 0 && (
+          {resourceView === 'gpu' && node.borrowingLimit > 0 && (
             <span className="text-[10px] text-text-muted">
               +{node.borrowingLimit} borrow
             </span>
@@ -94,6 +133,7 @@ export function QuotaTreeNode({ node, depth, selectedId, onSelect }: QuotaTreeNo
                 depth={depth + 1}
                 selectedId={selectedId}
                 onSelect={onSelect}
+                resourceView={resourceView}
               />
             ))}
           </motion.div>

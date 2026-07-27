@@ -1,8 +1,11 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useClusterQueues } from '../hooks/useKueueData';
 import { ClusterQueueConfigPopover } from '../components/queues/ClusterQueueConfigPopover';
+import { CohortLendingBadge } from '../components/queues/CohortLendingBadge';
+import { sumCohortBorrowedGpus } from '../utils/cohortLending';
 import { Loader2, AlertCircle, Layers, CheckCircle, Clock, ArrowRightLeft, Info } from 'lucide-react';
 import type { ClusterQueueInfo } from '../services/api';
+import { formatCpu, formatMemoryGi } from '../utils/formatResources';
 
 export function ClusterQueues() {
   const { clusterQueues, localQueues, isLoading, error } = useClusterQueues();
@@ -57,7 +60,6 @@ export function ClusterQueues() {
   // Get filtered queues based on selected cohort
   const filteredQueues = useMemo(() => {
     if (selectedCohort === null) {
-      // Return all queues sorted by cohort then name
       return [...clusterQueues].sort((a, b) => {
         const cohortA = a.cohort || 'default';
         const cohortB = b.cohort || 'default';
@@ -67,6 +69,16 @@ export function ClusterQueues() {
     }
     return clusterQueues.filter((cq) => (cq.cohort || 'default') === selectedCohort);
   }, [clusterQueues, selectedCohort]);
+
+  const cohortSections = useMemo(() => {
+    if (selectedCohort !== null) {
+      return [{ name: selectedCohort, queues: filteredQueues }];
+    }
+    return cohorts.map((cohort) => ({
+      name: cohort,
+      queues: groupedQueues.get(cohort) ?? [],
+    }));
+  }, [selectedCohort, filteredQueues, cohorts, groupedQueues]);
 
   // Get local queues for a cluster queue
   const getLocalQueuesForCQ = (cqName: string) => {
@@ -137,27 +149,31 @@ export function ClusterQueues() {
       </div>
 
       {/* Queue Tiles */}
-      <div className="flex-1 overflow-y-auto">
-        {/* Header when a specific cohort is selected */}
-        {selectedCohort && (
-          <div className="flex items-center gap-2 mb-4">
-            <Layers size={16} className="text-primary" />
-            <h2 className="text-sm font-medium text-text-primary">{selectedCohort}</h2>
-            <span className="text-[11px] text-text-muted">({filteredQueues.length} queues)</span>
-          </div>
-        )}
+      <div className="flex-1 overflow-y-auto space-y-6">
+        {cohortSections.map(({ name, queues }) => {
+          const cohortLentGpus = sumCohortBorrowedGpus(queues);
 
-        {/* Queue Tiles Grid - single responsive grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
-          {filteredQueues.map((cq) => {
-            const localQs = getLocalQueuesForCQ(cq.name);
-            const availableGpus = cq.nominalGpus - cq.usedGpus + cq.borrowedGpus;
+          return (
+            <section key={name}>
+              <div className="flex flex-wrap items-center gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <Layers size={16} className="text-primary" />
+                  <h2 className="text-sm font-medium text-text-primary">{name}</h2>
+                  <span className="text-[11px] text-text-muted">({queues.length} queues)</span>
+                </div>
+                <CohortLendingBadge gpuCount={cohortLentGpus} />
+              </div>
 
-            return (
-              <div
-                key={cq.id}
-                className="bg-surface rounded-[12px] border border-border p-4 shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:border-primary transition-colors min-w-0"
-              >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+                {queues.map((cq) => {
+                  const localQs = getLocalQueuesForCQ(cq.name);
+                  const availableGpus = cq.nominalGpus - cq.usedGpus + cq.borrowedGpus;
+
+                  return (
+                    <div
+                      key={cq.id}
+                      className="bg-surface rounded-[12px] border border-border p-4 shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:border-primary transition-colors min-w-0"
+                    >
                 {/* Header */}
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-1">
@@ -208,7 +224,7 @@ export function ClusterQueues() {
                 {/* GPU Stats */}
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   <div>
-                    <div className="text-[11px] text-text-muted">Quota</div>
+                    <div className="text-[11px] text-text-muted">GPU Quota</div>
                     <div className="text-lg font-semibold text-text-primary">{cq.nominalGpus}</div>
                   </div>
                   <div>
@@ -221,32 +237,38 @@ export function ClusterQueues() {
                   </div>
                 </div>
 
-                {/* Borrowing/Lending Indicators */}
-                {(cq.borrowedGpus > 0 || (cq.lentGpus ?? 0) > 0) && (
-                  <div className="mb-4 flex flex-col gap-2">
-                    {/* Borrowed GPUs */}
-                    {cq.borrowedGpus > 0 && (
-                      <div className="p-2 bg-warning/10 rounded-lg border border-warning/20">
-                        <div className="flex items-center gap-2">
-                          <ArrowRightLeft size={14} className="text-warning" />
-                          <span className="text-[12px] text-warning">
-                            Borrowing {cq.borrowedGpus} GPU{cq.borrowedGpus > 1 ? 's' : ''} from cohort
-                          </span>
+                {(cq.nominalCpu > 0 || cq.nominalMemory > 0) && (
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    {cq.nominalCpu > 0 && (
+                      <div className="p-2 bg-surface-2 rounded-lg border border-border">
+                        <div className="text-[11px] text-text-muted mb-1">CPU</div>
+                        <div className="text-[13px] text-text-primary">
+                          {formatCpu(cq.usedCpu)} / {formatCpu(cq.nominalCpu)} cores
                         </div>
                       </div>
                     )}
+                    {cq.nominalMemory > 0 && (
+                      <div className="p-2 bg-surface-2 rounded-lg border border-border">
+                        <div className="text-[11px] text-text-muted mb-1">Memory</div>
+                        <div className="text-[13px] text-text-primary">
+                          {formatMemoryGi(cq.usedMemory)} / {formatMemoryGi(cq.nominalMemory)} GiB
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                    {/* Lent GPUs */}
-                    {(cq.lentGpus ?? 0) > 0 && (
-                      <div className="p-2 bg-compute/10 rounded-lg border border-compute/20">
-                        <div className="flex items-center gap-2">
-                          <ArrowRightLeft size={14} className="text-compute" />
-                          <span className="text-[12px] text-compute">
-                            Lending {cq.lentGpus} GPU{cq.lentGpus > 1 ? 's' : ''} to cohort
-                          </span>
-                        </div>
+                {/* Borrowing indicator (queue-specific) */}
+                {cq.borrowedGpus > 0 && (
+                  <div className="mb-4">
+                    <div className="p-2 bg-warning/10 rounded-lg border border-warning/20">
+                      <div className="flex items-center gap-2">
+                        <ArrowRightLeft size={14} className="text-warning" />
+                        <span className="text-[12px] text-warning">
+                          Borrowing {cq.borrowedGpus} GPU{cq.borrowedGpus > 1 ? 's' : ''} from cohort
+                        </span>
                       </div>
-                    )}
+                    </div>
                   </div>
                 )}
 
@@ -281,9 +303,12 @@ export function ClusterQueues() {
                   </div>
                 </div>
               </div>
-            );
-          })}
-        </div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
 
         {/* Config Popover */}
         <ClusterQueueConfigPopover

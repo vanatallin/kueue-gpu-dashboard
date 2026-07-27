@@ -28,6 +28,10 @@ interface NodeInfo {
   gpuCount: number;
   gpuAllocatable: number;
   gpuInUse: number;
+  cpuAllocatable: number;
+  cpuInUse: number;
+  memoryAllocatable: number;
+  memoryInUse: number;
   gpuType: string;
   healthy: boolean;
 }
@@ -38,8 +42,16 @@ interface NodesData {
     totalGpus: number;
     allocatableGpus: number;
     gpusInUse: number;
+    totalClusterNodes: number;
+    healthyClusterNodes: number;
+    gpuNodes: number;
+    healthyGpuNodes: number;
     totalNodes: number;
     healthyNodes: number;
+    cpuAllocatable: number;
+    cpuInUse: number;
+    memoryAllocatableGi: number;
+    memoryInUseGi: number;
   } | null;
   gpuTypes: Array<{ type: string; count: number }>;
   isLoading: boolean;
@@ -50,11 +62,17 @@ interface NodesData {
 
 interface MetricsData {
   totalGpus: number;
+  allocatableGpus: number;
   usedGpus: number;
+  cpuAllocatable: number;
+  cpuInUse: number;
+  memoryAllocatableGi: number;
+  memoryInUseGi: number;
   compute: number;
   memory: number;
   isLoading: boolean;
   error: string | null;
+  refetch: () => Promise<void>;
 }
 
 export function useWorkloads(): WorkloadsData {
@@ -281,7 +299,17 @@ export function useMetrics(): MetricsData {
   const { isAuthenticated } = useAuth();
   const { settings } = useSettings();
   const { refreshTrigger, setLastUpdated: setGlobalLastUpdated, setIsRefreshing } = useRefresh();
-  const [metrics, setMetrics] = useState({ totalGpus: 0, usedGpus: 0, compute: 0, memory: 0 });
+  const [metrics, setMetrics] = useState({
+    totalGpus: 0,
+    allocatableGpus: 0,
+    usedGpus: 0,
+    cpuAllocatable: 0,
+    cpuInUse: 0,
+    memoryAllocatableGi: 0,
+    memoryInUseGi: 0,
+    compute: 0,
+    memory: 0,
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isMounted = useRef(true);
@@ -343,7 +371,7 @@ export function useMetrics(): MetricsData {
     return () => clearInterval(interval);
   }, [isAuthenticated, settings.autoRefreshEnabled, settings.autoRefreshInterval, fetchMetrics]);
 
-  return { ...metrics, isLoading, error };
+  return { ...metrics, isLoading, error, refetch: fetchMetrics };
 }
 
 interface ClusterQueuesData {

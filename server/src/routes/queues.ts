@@ -8,16 +8,14 @@ import {
   KueueResourceFlavor,
   KubeList,
 } from '../services/kube.js';
+import { parseQuantity, parseCpu, parseMemory } from '../utils/resources.js';
 
 const router = Router();
 
-// Parse resource quantity (e.g., "8" or "8000m")
-function parseQuantity(q: string | undefined): number {
-  if (!q) return 0;
-  if (q.endsWith('m')) {
-    return parseInt(q, 10) / 1000;
-  }
-  return parseInt(q, 10) || 0;
+function parseResourceQuota(name: string, q: string | undefined): number {
+  if (name === 'cpu') return parseCpu(q);
+  if (name === 'memory') return parseMemory(q);
+  return parseQuantity(q);
 }
 
 // Transform ClusterQueue to frontend quota node format
@@ -27,6 +25,10 @@ function transformClusterQueue(cq: KueueClusterQueue, resourceFlavors: Map<strin
   let borrowedGpus = 0;
   let borrowingLimit = 0;
   let lendingLimit = 0;
+  let nominalCpu = 0;
+  let usedCpu = 0;
+  let nominalMemory = 0;
+  let usedMemory = 0;
 
   // Extract flavor information
   const flavors: Array<{
@@ -49,9 +51,9 @@ function transformClusterQueue(cq: KueueClusterQueue, resourceFlavors: Map<strin
     for (const flavor of rg.flavors || []) {
       const flavorResources: typeof flavors[0]['resources'] = [];
       for (const resource of flavor.resources || []) {
-        const nominal = parseQuantity(resource.nominalQuota);
-        const bLimit = parseQuantity(resource.borrowingLimit);
-        const lLimit = parseQuantity(resource.lendingLimit);
+        const nominal = parseResourceQuota(resource.name, resource.nominalQuota);
+        const bLimit = parseResourceQuota(resource.name, resource.borrowingLimit);
+        const lLimit = parseResourceQuota(resource.name, resource.lendingLimit);
 
         flavorResources.push({
           name: resource.name,
@@ -67,6 +69,10 @@ function transformClusterQueue(cq: KueueClusterQueue, resourceFlavors: Map<strin
           nominalGpus += nominal;
           borrowingLimit += bLimit;
           lendingLimit += lLimit;
+        } else if (resource.name === 'cpu') {
+          nominalCpu += nominal;
+        } else if (resource.name === 'memory') {
+          nominalMemory += nominal;
         }
       }
 
@@ -87,6 +93,10 @@ function transformClusterQueue(cq: KueueClusterQueue, resourceFlavors: Map<strin
       if (resource.name === 'nvidia.com/gpu') {
         usedGpus += parseQuantity(resource.total);
         borrowedGpus += parseQuantity(resource.borrowed);
+      } else if (resource.name === 'cpu') {
+        usedCpu += parseCpu(resource.total);
+      } else if (resource.name === 'memory') {
+        usedMemory += parseMemory(resource.total);
       }
     }
   }
@@ -98,6 +108,10 @@ function transformClusterQueue(cq: KueueClusterQueue, resourceFlavors: Map<strin
     cohort: cq.spec.cohort,
     nominalGpus,
     usedGpus,
+    nominalCpu,
+    usedCpu,
+    nominalMemory,
+    usedMemory,
     borrowedGpus,
     borrowingLimit,
     lendingLimit,
@@ -127,57 +141,6 @@ function transformLocalQueue(lq: KueueLocalQueue) {
   };
 }
 
-// Calculate lent GPUs for each queue in a cohort
-// When queue A borrows from cohort, other queues (that are NOT borrowing) are lending
-function calculateLentGpus(queues: ReturnType<typeof transformClusterQueue>[]) {
-  // Group queues by cohort
-  const cohortMap = new Map<string, typeof queues>();
-  for (const q of queues) {
-    const cohort = q.cohort || 'default';
-    if (!cohortMap.has(cohort)) {
-      cohortMap.set(cohort, []);
-    }
-    cohortMap.get(cohort)!.push(q);
-  }
-
-  // For each cohort, calculate lent GPUs
-  for (const [, cohortQueues] of cohortMap) {
-    // Total borrowed in this cohort
-    const totalBorrowed = cohortQueues.reduce((sum, q) => sum + q.borrowedGpus, 0);
-
-    if (totalBorrowed === 0) {
-      // No one is borrowing, no one is lending
-      for (const q of cohortQueues) {
-        (q as typeof q & { lentGpus: number }).lentGpus = 0;
-      }
-    } else {
-      // Only queues that are NOT borrowing can be lending
-      // Calculate lending capacity from non-borrowing queues only
-      const lendingQueues = cohortQueues.filter(q => q.borrowedGpus === 0 && q.lendingLimit > 0);
-      const totalLendingCapacity = lendingQueues.reduce((sum, q) => sum + q.lendingLimit, 0);
-
-      for (const q of cohortQueues) {
-        // A queue that is borrowing cannot also be lending
-        if (q.borrowedGpus > 0) {
-          (q as typeof q & { lentGpus: number }).lentGpus = 0;
-        } else if (totalLendingCapacity > 0 && q.lendingLimit > 0) {
-          // This queue's share of lending = (its lendingLimit / total) * totalBorrowed
-          // But capped at its own lendingLimit
-          const share = Math.min(
-            q.lendingLimit,
-            Math.round((q.lendingLimit / totalLendingCapacity) * totalBorrowed)
-          );
-          (q as typeof q & { lentGpus: number }).lentGpus = share;
-        } else {
-          (q as typeof q & { lentGpus: number }).lentGpus = 0;
-        }
-      }
-    }
-  }
-
-  return queues;
-}
-
 // GET /api/clusterqueues
 router.get('/clusterqueues', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -202,8 +165,7 @@ router.get('/clusterqueues', requireAuth, async (req: Request, res: Response) =>
     }
 
     const queues = cqData.items.map((cq) => transformClusterQueue(cq, resourceFlavors));
-    const queuesWithLent = calculateLentGpus(queues);
-    res.json({ clusterQueues: queuesWithLent });
+    res.json({ clusterQueues: queues });
   } catch (err) {
     console.error('Error fetching cluster queues:', err);
     const message = err instanceof Error ? err.message : 'Failed to fetch cluster queues';
@@ -275,11 +237,28 @@ router.get('/quotas', requireAuth, async (req: Request, res: Response) => {
       type: 'cohort' as const,
       nominalGpus: queues.reduce((sum, q) => sum + q.nominalGpus, 0),
       usedGpus: queues.reduce((sum, q) => sum + q.usedGpus, 0),
+      nominalCpu: queues.reduce((sum, q) => sum + q.nominalCpu, 0),
+      usedCpu: queues.reduce((sum, q) => sum + q.usedCpu, 0),
+      nominalMemory: queues.reduce((sum, q) => sum + q.nominalMemory, 0),
+      usedMemory: queues.reduce((sum, q) => sum + q.usedMemory, 0),
+      borrowedGpus: queues.reduce((sum, q) => sum + q.borrowedGpus, 0),
       borrowingLimit: 0,
       lendingLimit: 0,
       priority: 0,
       children: queues.map((cq) => ({
-        ...cq,
+        id: cq.id,
+        name: cq.name,
+        type: 'clusterQueue' as const,
+        nominalGpus: cq.nominalGpus,
+        usedGpus: cq.usedGpus,
+        nominalCpu: cq.nominalCpu,
+        usedCpu: cq.usedCpu,
+        nominalMemory: cq.nominalMemory,
+        usedMemory: cq.usedMemory,
+        borrowedGpus: cq.borrowedGpus,
+        borrowingLimit: cq.borrowingLimit,
+        lendingLimit: cq.lendingLimit,
+        priority: cq.priority,
         children: localQueues
           .filter((lq) => lq.clusterQueue === cq.name)
           .map((lq) => ({
@@ -288,6 +267,10 @@ router.get('/quotas', requireAuth, async (req: Request, res: Response) => {
             type: 'localQueue' as const,
             nominalGpus: 0,
             usedGpus: 0,
+            nominalCpu: 0,
+            usedCpu: 0,
+            nominalMemory: 0,
+            usedMemory: 0,
             borrowingLimit: 0,
             lendingLimit: 0,
             priority: 0,

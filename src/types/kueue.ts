@@ -25,6 +25,8 @@ export interface Workload {
   type?: string;
   priority: Priority;
   gpusRequested: number;
+  cpuRequested?: number;
+  memoryRequested?: number;
   status: WorkloadStatus;
   pool: string;
   queue?: string;
@@ -60,6 +62,10 @@ export interface ClusterMetrics {
   usedGpus: number;
   compute: number;
   memory: number;
+  cpuAllocatable?: number;
+  cpuInUse?: number;
+  memoryAllocatableGi?: number;
+  memoryInUseGi?: number;
 }
 
 export interface DemoState {
@@ -79,6 +85,11 @@ export interface QuotaNode {
   type: QuotaNodeType;
   nominalGpus: number;
   usedGpus: number;
+  nominalCpu?: number;
+  usedCpu?: number;
+  nominalMemory?: number;
+  usedMemory?: number;
+  borrowedGpus?: number;
   borrowingLimit: number;
   lendingLimit: number;
   priority: number;

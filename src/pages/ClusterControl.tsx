@@ -3,25 +3,37 @@ import { useWorkloads, useNodes, useQuotas } from '../hooks/useKueueData';
 import { MetricCard } from '../components/cards/MetricCard';
 import { QueueWorkloadsPopover } from '../components/queues/QueueWorkloadsPopover';
 import { Loader2, AlertCircle, Info, AlertTriangle, CheckCircle } from 'lucide-react';
+import { formatCpu, formatMemoryGi, percentUsed } from '../utils/formatResources';
 import type { QuotaNode } from '../types/kueue';
 
+interface QueueTileData {
+  name: string;
+  usedGpus: number;
+  nominalGpus: number;
+  usedCpu: number;
+  nominalCpu: number;
+  usedMemory: number;
+  nominalMemory: number;
+}
+
 export function ClusterControl() {
-  // Popover state
   const [selectedQueue, setSelectedQueue] = useState<{
     name: string;
     usedGpus: number;
     nominalGpus: number;
+    usedCpu: number;
+    nominalCpu: number;
+    usedMemory: number;
+    nominalMemory: number;
     rect: DOMRect;
   } | null>(null);
 
   const handleQueueClick = useCallback((
     e: React.MouseEvent<HTMLDivElement>,
-    queue: { name: string; usedGpus: number; nominalGpus: number }
+    queue: QueueTileData
   ) => {
-    // Stop propagation to prevent click-outside handler from interfering
     e.stopPropagation();
 
-    // Toggle: close if clicking the same queue
     if (selectedQueue?.name === queue.name) {
       setSelectedQueue(null);
       return;
@@ -34,47 +46,55 @@ export function ClusterControl() {
     setSelectedQueue(null);
   }, []);
 
-  // Fetch real data
   const { workloads, isLoading: workloadsLoading, error: workloadsError } = useWorkloads();
   const { summary, isLoading: nodesLoading, error: nodesError } = useNodes();
   const { quotas, isLoading: quotasLoading } = useQuotas();
 
-  // Compute metrics from real data
   const metrics = useMemo(() => {
     if (summary) {
       return {
-        totalNodes: summary.totalNodes,
-        healthyNodes: summary.healthyNodes,
+        totalClusterNodes: summary.totalClusterNodes,
+        healthyClusterNodes: summary.healthyClusterNodes,
+        gpuNodes: summary.gpuNodes,
+        healthyGpuNodes: summary.healthyGpuNodes,
         totalGpus: summary.allocatableGpus,
         usedGpus: summary.gpusInUse,
+        cpuAllocatable: summary.cpuAllocatable,
+        cpuInUse: summary.cpuInUse,
+        memoryAllocatableGi: summary.memoryAllocatableGi,
+        memoryInUseGi: summary.memoryInUseGi,
       };
     }
     return {
-      totalNodes: 0,
-      healthyNodes: 0,
+      totalClusterNodes: 0,
+      healthyClusterNodes: 0,
+      gpuNodes: 0,
+      healthyGpuNodes: 0,
       totalGpus: 0,
       usedGpus: 0,
+      cpuAllocatable: 0,
+      cpuInUse: 0,
+      memoryAllocatableGi: 0,
+      memoryInUseGi: 0,
     };
   }, [summary]);
 
-  // Compute workload stats
   const workloadStats = useMemo(() => {
     const running = workloads.filter((w) => w.status === 'running').length;
     const pending = workloads.filter((w) => w.status === 'pending').length;
     const completed = workloads.filter((w) => w.status === 'completed').length;
     const preempted = workloads.filter((w) => w.status === 'preempted').length;
 
-    // Group by type
     const byType = new Map<string, number>();
     for (const w of workloads) {
       const type = w.type || 'Job';
       byType.set(type, (byType.get(type) || 0) + 1);
     }
 
-    // Calculate total GPUs requested by running workloads
-    const gpusInUse = workloads
-      .filter((w) => w.status === 'running')
-      .reduce((sum, w) => sum + (w.gpusRequested || 0), 0);
+    const runningWorkloads = workloads.filter((w) => w.status === 'running');
+    const gpusInUse = runningWorkloads.reduce((sum, w) => sum + (w.gpusRequested || 0), 0);
+    const cpuInUse = runningWorkloads.reduce((sum, w) => sum + (w.cpuRequested || 0), 0);
+    const memoryInUseGi = runningWorkloads.reduce((sum, w) => sum + (w.memoryRequested || 0), 0);
 
     return {
       total: workloads.length,
@@ -84,12 +104,13 @@ export function ClusterControl() {
       preempted,
       byType: Array.from(byType.entries()).sort((a, b) => b[1] - a[1]),
       gpusInUse,
+      cpuInUse,
+      memoryInUseGi,
     };
   }, [workloads]);
 
-  // Extract ClusterQueues for overview
   const clusterQueues = useMemo(() => {
-    const queues: Array<{ name: string; usedGpus: number; nominalGpus: number }> = [];
+    const queues: QueueTileData[] = [];
     const extractQueues = (nodes: QuotaNode[]) => {
       for (const node of nodes) {
         if (node.type === 'clusterQueue') {
@@ -97,6 +118,10 @@ export function ClusterControl() {
             name: node.name,
             usedGpus: node.usedGpus,
             nominalGpus: node.nominalGpus,
+            usedCpu: node.usedCpu ?? 0,
+            nominalCpu: node.nominalCpu ?? 0,
+            usedMemory: node.usedMemory ?? 0,
+            nominalMemory: node.nominalMemory ?? 0,
           });
         }
         if (node.children) extractQueues(node.children);
@@ -106,13 +131,11 @@ export function ClusterControl() {
     return queues;
   }, [quotas]);
 
-  // Generate insights based on real data
   const insights = useMemo(() => {
     const items: Array<{ severity: 'info' | 'warning' | 'success'; message: string }> = [];
 
-    // GPU utilization insight
     if (metrics.totalGpus > 0) {
-      const utilization = Math.round((metrics.usedGpus / metrics.totalGpus) * 100);
+      const utilization = percentUsed(metrics.usedGpus, metrics.totalGpus);
       if (utilization >= 90) {
         items.push({ severity: 'warning', message: `High GPU utilization: ${utilization}% of GPUs in use.` });
       } else if (utilization >= 70) {
@@ -122,7 +145,24 @@ export function ClusterControl() {
       }
     }
 
-    // Pending workloads insight
+    if (metrics.cpuAllocatable > 0) {
+      const cpuUtil = percentUsed(metrics.cpuInUse, metrics.cpuAllocatable);
+      if (cpuUtil >= 90) {
+        items.push({ severity: 'warning', message: `High CPU utilization: ${cpuUtil}% of allocatable cores requested.` });
+      } else if (cpuUtil >= 70) {
+        items.push({ severity: 'info', message: `CPU utilization at ${cpuUtil}%.` });
+      }
+    }
+
+    if (metrics.memoryAllocatableGi > 0) {
+      const memUtil = percentUsed(metrics.memoryInUseGi, metrics.memoryAllocatableGi);
+      if (memUtil >= 90) {
+        items.push({ severity: 'warning', message: `High memory utilization: ${memUtil}% of allocatable memory requested.` });
+      } else if (memUtil >= 70) {
+        items.push({ severity: 'info', message: `Memory utilization at ${memUtil}%.` });
+      }
+    }
+
     if (workloadStats.pending > 0) {
       items.push({
         severity: workloadStats.pending > 5 ? 'warning' : 'info',
@@ -130,16 +170,14 @@ export function ClusterControl() {
       });
     }
 
-    // Unhealthy nodes insight
-    const unhealthyNodes = metrics.totalNodes - metrics.healthyNodes;
-    if (unhealthyNodes > 0) {
+    const unhealthyClusterNodes = metrics.totalClusterNodes - metrics.healthyClusterNodes;
+    if (unhealthyClusterNodes > 0) {
       items.push({
         severity: 'warning',
-        message: `${unhealthyNodes} GPU node${unhealthyNodes > 1 ? 's' : ''} reporting unhealthy status.`,
+        message: `${unhealthyClusterNodes} node${unhealthyClusterNodes > 1 ? 's' : ''} reporting unhealthy status.`,
       });
     }
 
-    // All healthy
     if (items.length === 0 || (items.length === 1 && items[0].severity === 'success')) {
       if (workloadStats.running > 0) {
         items.push({ severity: 'success', message: `${workloadStats.running} workload${workloadStats.running > 1 ? 's' : ''} running smoothly.` });
@@ -184,15 +222,27 @@ export function ClusterControl() {
     Job: 'bg-gray-500',
   };
 
+  const renderUtilBar = (used: number, total: number, colorClass: string) => {
+    const utilization = percentUsed(used, total);
+    return (
+      <div className="h-1.5 bg-surface rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${colorClass}`}
+          style={{ width: `${Math.min(utilization, 100)}%` }}
+        />
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-6 max-w-[1200px]">
-      <div className="grid grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-6">
         <MetricCard
-          label="GPU Nodes"
-          value={metrics.totalNodes}
-          sub={`Healthy: ${metrics.healthyNodes}  ·  Unhealthy: ${metrics.totalNodes - metrics.healthyNodes}`}
-          barValue={metrics.healthyNodes}
-          barMax={metrics.totalNodes}
+          label="Cluster Nodes"
+          value={metrics.totalClusterNodes}
+          sub={`Healthy: ${metrics.healthyClusterNodes}  ·  ${metrics.gpuNodes} GPU`}
+          barValue={metrics.healthyClusterNodes}
+          barMax={metrics.totalClusterNodes || 1}
           barColor="var(--color-success)"
         />
         <MetricCard
@@ -200,8 +250,24 @@ export function ClusterControl() {
           value={metrics.totalGpus}
           sub={`Used: ${metrics.usedGpus}  ·  Free: ${metrics.totalGpus - metrics.usedGpus}`}
           barValue={metrics.usedGpus}
-          barMax={metrics.totalGpus}
+          barMax={metrics.totalGpus || 1}
           barColor="var(--color-primary)"
+        />
+        <MetricCard
+          label="CPU"
+          value={`${formatCpu(metrics.cpuInUse)} / ${formatCpu(metrics.cpuAllocatable)}`}
+          sub="cores in use"
+          barValue={metrics.cpuInUse}
+          barMax={metrics.cpuAllocatable || 1}
+          barColor="var(--color-compute)"
+        />
+        <MetricCard
+          label="Memory"
+          value={`${formatMemoryGi(metrics.memoryInUseGi)} / ${formatMemoryGi(metrics.memoryAllocatableGi)}`}
+          sub="GiB in use"
+          barValue={metrics.memoryInUseGi}
+          barMax={metrics.memoryAllocatableGi || 1}
+          barColor="var(--color-memory)"
         />
         <MetricCard
           label="Workloads"
@@ -217,11 +283,10 @@ export function ClusterControl() {
           sub="Active queues"
           barValue={clusterQueues.length}
           barMax={clusterQueues.length || 1}
-          barColor="var(--color-memory)"
+          barColor="var(--color-primary)"
         />
       </div>
 
-      {/* Insights Section */}
       <div className="bg-surface rounded-[12px] border border-border p-4 shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
         <h3 className="text-sm font-medium text-text-primary mb-3">Cluster Insights</h3>
         <div className="flex flex-col gap-2">
@@ -234,13 +299,14 @@ export function ClusterControl() {
         </div>
       </div>
 
-      {/* Cluster Queue Overview */}
       {clusterQueues.length > 0 && (
         <div className="bg-surface rounded-[12px] border border-border p-4 shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
           <h3 className="text-sm font-medium text-text-primary mb-4">Cluster Queue Overview</h3>
           <div className="flex flex-wrap gap-4">
             {clusterQueues.map((queue) => {
-              const utilization = queue.nominalGpus > 0 ? Math.round((queue.usedGpus / queue.nominalGpus) * 100) : 0;
+              const gpuUtil = percentUsed(queue.usedGpus, queue.nominalGpus);
+              const cpuUtil = percentUsed(queue.usedCpu, queue.nominalCpu);
+              const memUtil = percentUsed(queue.usedMemory, queue.nominalMemory);
               const queueWorkloads = workloads.filter(
                 (w) => w.pool === queue.name && (w.status === 'running' || w.status === 'pending')
               );
@@ -266,26 +332,40 @@ export function ClusterControl() {
                       </span>
                     )}
                   </div>
-                  <div className="text-[11px] text-text-muted mb-2">
-                    {queue.usedGpus} / {queue.nominalGpus} GPUs ({utilization}%)
+                  <div className="text-[11px] text-text-muted mb-1">
+                    {queue.usedGpus} / {queue.nominalGpus} GPUs ({gpuUtil}%)
                   </div>
-                  <div className="h-1.5 bg-surface rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all"
-                      style={{ width: `${Math.min(utilization, 100)}%` }}
-                    />
-                  </div>
+                  {renderUtilBar(queue.usedGpus, queue.nominalGpus, 'bg-primary')}
+                  {queue.nominalCpu > 0 && (
+                    <>
+                      <div className="text-[11px] text-text-muted mt-2 mb-1">
+                        {formatCpu(queue.usedCpu)} / {formatCpu(queue.nominalCpu)} CPU ({cpuUtil}%)
+                      </div>
+                      {renderUtilBar(queue.usedCpu, queue.nominalCpu, 'bg-compute')}
+                    </>
+                  )}
+                  {queue.nominalMemory > 0 && (
+                    <>
+                      <div className="text-[11px] text-text-muted mt-2 mb-1">
+                        {formatMemoryGi(queue.usedMemory)} / {formatMemoryGi(queue.nominalMemory)} GiB ({memUtil}%)
+                      </div>
+                      {renderUtilBar(queue.usedMemory, queue.nominalMemory, 'bg-memory')}
+                    </>
+                  )}
                 </div>
               );
             })}
           </div>
 
-          {/* Queue Workloads Popover */}
           <QueueWorkloadsPopover
             queueName={selectedQueue?.name || ''}
             workloads={workloads}
             usedGpus={selectedQueue?.usedGpus || 0}
             nominalGpus={selectedQueue?.nominalGpus || 0}
+            usedCpu={selectedQueue?.usedCpu || 0}
+            nominalCpu={selectedQueue?.nominalCpu || 0}
+            usedMemory={selectedQueue?.usedMemory || 0}
+            nominalMemory={selectedQueue?.nominalMemory || 0}
             isOpen={selectedQueue !== null}
             onClose={closePopover}
             anchorRect={selectedQueue?.rect || null}
@@ -293,11 +373,9 @@ export function ClusterControl() {
         </div>
       )}
 
-      {/* Workload Summary */}
       <div className="bg-surface rounded-[12px] border border-border p-4 shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
         <h3 className="text-sm font-medium text-text-primary mb-4">Workload Summary</h3>
         <div className="grid grid-cols-2 gap-6">
-          {/* Status breakdown */}
           <div>
             <h4 className="text-[11px] font-medium text-text-muted uppercase tracking-wide mb-3">By Status</h4>
             <div className="space-y-2">
@@ -334,7 +412,6 @@ export function ClusterControl() {
             </div>
           </div>
 
-          {/* Type breakdown */}
           <div>
             <h4 className="text-[11px] font-medium text-text-muted uppercase tracking-wide mb-3">By Type</h4>
             <div className="space-y-2">
@@ -355,13 +432,26 @@ export function ClusterControl() {
           </div>
         </div>
 
-        {/* GPU usage by workloads */}
-        {workloadStats.gpusInUse > 0 && (
-          <div className="mt-4 pt-4 border-t border-border">
-            <div className="flex items-center justify-between text-[13px]">
-              <span className="text-text-secondary">GPUs requested by running workloads</span>
-              <span className="font-medium text-text-primary">{workloadStats.gpusInUse}</span>
-            </div>
+        {workloadStats.running > 0 && (
+          <div className="mt-4 pt-4 border-t border-border space-y-2">
+            {workloadStats.gpusInUse > 0 && (
+              <div className="flex items-center justify-between text-[13px]">
+                <span className="text-text-secondary">GPUs requested by running workloads</span>
+                <span className="font-medium text-text-primary">{workloadStats.gpusInUse}</span>
+              </div>
+            )}
+            {workloadStats.cpuInUse > 0 && (
+              <div className="flex items-center justify-between text-[13px]">
+                <span className="text-text-secondary">CPU cores requested by running workloads</span>
+                <span className="font-medium text-text-primary">{formatCpu(workloadStats.cpuInUse)}</span>
+              </div>
+            )}
+            {workloadStats.memoryInUseGi > 0 && (
+              <div className="flex items-center justify-between text-[13px]">
+                <span className="text-text-secondary">Memory requested by running workloads</span>
+                <span className="font-medium text-text-primary">{formatMemoryGi(workloadStats.memoryInUseGi)} GiB</span>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import type { Workload } from '../../types/kueue';
 import { StatusBadge } from './StatusBadge';
+import { formatCpu, formatMemoryGi } from '../../utils/formatResources';
 
 interface WorkloadRowProps {
   workload: Workload;
@@ -45,6 +46,12 @@ export function WorkloadRow({ workload }: WorkloadRowProps) {
         </span>
       </td>
       <td className="py-3 pr-4 text-[13px] text-text-secondary">{workload.gpusRequested}</td>
+      <td className="py-3 pr-4 text-[13px] text-text-secondary">
+        {workload.cpuRequested ? formatCpu(workload.cpuRequested) : '—'}
+      </td>
+      <td className="py-3 pr-4 text-[13px] text-text-secondary">
+        {workload.memoryRequested ? `${formatMemoryGi(workload.memoryRequested)} GiB` : '—'}
+      </td>
       <td className="py-3 pr-4">
         <StatusBadge status={workload.status} />
       </td>
